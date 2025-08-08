@@ -1,71 +1,64 @@
-React
-Un proyecto moderno basado en React que utiliza las tecnologías y herramientas más recientes del frontend para construir aplicaciones web responsivas.
+# React
 
-🚀 Características
-React 18 – Versión de React con mejoras en renderizado y funcionalidades concurrentes
+A modern React-based project utilizing the latest frontend technologies and tools for building responsive web applications.
 
-Vite – Herramienta de construcción y servidor de desarrollo ultrarrápido
+## 🚀 Features
 
-Redux Toolkit – Manejo de estado con una configuración simplificada de Redux
+- **React 18** - React version with improved rendering and concurrent features
+- **Vite** - Lightning-fast build tool and development server
+- **Redux Toolkit** - State management with simplified Redux setup
+- **TailwindCSS** - Utility-first CSS framework with extensive customization
+- **React Router v6** - Declarative routing for React applications
+- **Data Visualization** - Integrated D3.js and Recharts for powerful data visualization
+- **Form Management** - React Hook Form for efficient form handling
+- **Animation** - Framer Motion for smooth UI animations
+- **Testing** - Jest and React Testing Library setup
 
-TailwindCSS – Framework CSS utilitario con amplias opciones de personalización
+## 📋 Prerequisites
 
-React Router v6 – Enrutamiento declarativo para aplicaciones React
+- Node.js (v14.x or higher)
+- npm or yarn
 
-Visualización de Datos – Integración de D3.js y Recharts para gráficos potentes
+## 🛠️ Installation
 
-Gestión de Formularios – React Hook Form para un manejo eficiente de formularios
+1. Install dependencies:
+   ```bash
+   npm install
+   # or
+   yarn install
+   ```
+   
+2. Start the development server:
+   ```bash
+   npm start
+   # or
+   yarn start
+   ```
 
-Animaciones – Framer Motion para animaciones suaves en la interfaz
+## 📁 Project Structure
 
-Pruebas – Configuración con Jest y React Testing Library
-
-📋 Requisitos Previos
-Node.js (v14.x o superior)
-
-npm o yarn
-
-🛠️ Instalación
-Instala las dependencias:
-
-bash
-Copy
-Edit
-npm install
-# o
-yarn install
-Inicia el servidor de desarrollo:
-
-bash
-Copy
-Edit
-npm start
-# o
-yarn start
-📁 Estructura del Proyecto
-bash
-Copy
-Edit
+```
 react_app/
-├── public/             # Archivos estáticos
+├── public/             # Static assets
 ├── src/
-│   ├── components/     # Componentes reutilizables de UI
-│   ├── pages/          # Componentes de páginas
-│   ├── styles/         # Estilos globales y configuración de Tailwind
-│   ├── App.jsx         # Componente principal de la aplicación
-│   ├── Routes.jsx      # Rutas de la aplicación
-│   └── index.jsx       # Punto de entrada de la aplicación
-├── .env                # Variables de entorno
-├── index.html          # Plantilla HTML
-├── package.json        # Dependencias y scripts del proyecto
-├── tailwind.config.js  # Configuración de Tailwind CSS
-└── vite.config.js      # Configuración de Vite
-🧩 Agregar Rutas
-Para agregar nuevas rutas a la aplicación, actualiza el archivo Routes.jsx:
+│   ├── components/     # Reusable UI components
+│   ├── pages/          # Page components
+│   ├── styles/         # Global styles and Tailwind configuration
+│   ├── App.jsx         # Main application component
+│   ├── Routes.jsx      # Application routes
+│   └── index.jsx       # Application entry point
+├── .env                # Environment variables
+├── index.html          # HTML template
+├── package.json        # Project dependencies and scripts
+├── tailwind.config.js  # Tailwind CSS configuration
+└── vite.config.js      # Vite configuration
+```
 
-jsx
-Copy
-Edit
+## 🧩 Adding Routes
+
+To add new routes to the application, update the `Routes.jsx` file:
+
+```jsx
 import { useRoutes } from "react-router-dom";
 import HomePage from "pages/HomePage";
 import AboutPage from "pages/AboutPage";
@@ -74,39 +67,41 @@ const ProjectRoutes = () => {
   let element = useRoutes([
     { path: "/", element: <HomePage /> },
     { path: "/about", element: <AboutPage /> },
-    // Agrega más rutas según sea necesario
+    // Add more routes as needed
   ]);
 
   return element;
 };
-🎨 Estilos
-Este proyecto utiliza Tailwind CSS para el diseño. La configuración incluye:
+```
 
-Plugin de formularios para estilizar inputs y campos
+## 🎨 Styling
 
-Plugin de tipografía para estilos de texto
+This project uses Tailwind CSS for styling. The configuration includes:
 
-Plugin de proporción de aspecto para elementos responsivos
+- Forms plugin for form styling
+- Typography plugin for text styling
+- Aspect ratio plugin for responsive elements
+- Container queries for component-specific responsive design
+- Fluid typography for responsive text
+- Animation utilities
 
-Consultas de contenedor para diseño responsivo específico por componente
+## 📱 Responsive Design
 
-Tipografía fluida para texto adaptable
+The app is built with responsive design using Tailwind CSS breakpoints.
 
-Utilidades de animación
 
-📱 Diseño Responsivo
-La aplicación está construida con diseño responsivo utilizando los breakpoints de Tailwind CSS.
+## 📦 Deployment
 
-📦 Despliegue
-Construye la aplicación para producción:
+Build the application for production:
 
-bash
-Copy
-Edit
+```bash
 npm run build
-🙏 Agradecimientos
-Desarrollado por Alejandro Trejo & Nova Axis Consulting
+```
 
-Impulsado por React y Vite
+## 🙏 Acknowledgments
 
-Estilizado con Tailwind CSS
+- Built by Alejandro Trejo & Nova Axis Consulting
+- Powered by React and Vite
+- Styled with Tailwind CSS
+
+

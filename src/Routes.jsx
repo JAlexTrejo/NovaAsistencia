@@ -12,6 +12,7 @@ import EmployeeAttendanceDashboard from "./pages/employee-attendance-dashboard";
 import AdministratorEmployeeManagementConsole from "./pages/administrator-employee-management-console";
 import AttendanceHistoryAndAnalyticsDashboard from "./pages/attendance-history-and-analytics-dashboard";
 import PayrollCalculationAndManagementInterface from "./pages/payroll-calculation-and-management-interface";
+import EnhancedEmployeePayrollManagementWithDetailedCalculations from "./pages/enhanced-employee-payroll-management-with-detailed-calculations";
 import ConstructionSiteAndSupervisorManagementHub from "./pages/construction-site-and-supervisor-management-hub";
 import IncidentRegistrationAndManagementSystem from "./pages/incident-registration-and-management-system";
 import ComprehensiveReportingAndExportCenter from "./pages/comprehensive-reporting-and-export-center";
@@ -19,6 +20,11 @@ import SystemAdministrationAndConfigurationPanel from "./pages/system-administra
 import UserProfileManagementAndAuthenticationCenter from "./pages/user-profile-management-and-authentication-center";
 import RoleBasedAccessControlManagementSystem from "./pages/role-based-access-control-management-system";
 import ActivityLoggingAndSecurityMonitoringDashboard from "./pages/activity-logging-and-security-monitoring-dashboard";
+import EnhancedEmployeeManagementConsoleWithDeletionControls from "./pages/enhanced-employee-management-console-with-deletion-controls";
+import RealTimePayrollEstimationDashboardWithZeroStateHandling from "./pages/real-time-payroll-estimation-dashboard-with-zero-state-handling";
+import AdvancedPayrollCalculationEngineWithComprehensiveWageManagement from "./pages/advanced-payroll-calculation-engine-with-comprehensive-wage-management";
+import RoleBasedPermissionEnforcementAndSecurityManagementSystem from "./pages/role-based-permission-enforcement-and-security-management-system";
+import PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration from "./pages/personalized-worker-dashboard-with-site-integration-and-team-collaboration";
 
 // Route Protection Component
 function ProtectedRoute({ children, requiredRole = null }) {
@@ -97,6 +103,16 @@ function AppRoutes() {
           </ProtectedRoute>
         } 
       />
+
+      {/* Personalized Worker Dashboard - Enhanced worker view */}
+      <Route 
+        path="/personalized-worker-dashboard-with-site-integration-and-team-collaboration" 
+        element={
+          <ProtectedRoute requiredRole="user">
+            <PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration />
+          </ProtectedRoute>
+        } 
+      />
       
       {/* Supervisor Routes */}
       <Route 
@@ -114,6 +130,56 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdministratorEmployeeManagementConsole />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Enhanced Employee Management with Deletion Controls */}
+      <Route 
+        path="/enhanced-employee-management-console-with-deletion-controls" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <EnhancedEmployeeManagementConsoleWithDeletionControls />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Real-Time Payroll Estimation Dashboard */}
+      <Route 
+        path="/real-time-payroll-estimation-dashboard-with-zero-state-handling" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <RealTimePayrollEstimationDashboardWithZeroStateHandling />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Enhanced Employee Payroll Management */}
+      <Route 
+        path="/enhanced-employee-payroll-management-with-detailed-calculations" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <EnhancedEmployeePayrollManagementWithDetailedCalculations />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Advanced Payroll Calculation Engine - NEW ROUTE */}
+      <Route 
+        path="/advanced-payroll-calculation-engine-with-comprehensive-wage-management" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdvancedPayrollCalculationEngineWithComprehensiveWageManagement />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Role-Based Permission Enforcement System - NEW ROUTE */}
+      <Route 
+        path="/role-based-permission-enforcement-and-security-management-system" 
+        element={
+          <ProtectedRoute requiredRole="superadmin">
+            <RoleBasedPermissionEnforcementAndSecurityManagementSystem />
           </ProtectedRoute>
         } 
       />
