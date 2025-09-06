@@ -243,23 +243,59 @@ const BrandingCustomizationTab = () => {
 
       {/* Logo Upload */}
       <div className="bg-card rounded-lg border border-border p-6">
-        <div className="flex items-center space-x-2 mb-6">
-          <Icon name="Image" size={20} className="text-primary" />
-          <h3 className="text-lg font-semibold text-foreground">Logo de la Empresa</h3>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-2">
+            <Icon name="Image" size={20} className="text-primary" />
+            <h3 className="text-lg font-semibold text-foreground">Logo de la Empresa</h3>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline" 
+              size="sm"
+              onClick={() => document.getElementById('logo-upload')?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <>
+                  <Icon name="Loader2" size={16} className="animate-spin mr-2" />
+                  Subiendo...
+                </>
+              ) : (
+                <>
+                  <Icon name="Upload" size={16} className="mr-2" />
+                  Subir Logo
+                </>
+              )}
+            </Button>
+            {formData?.logo_url && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleInputChange('logo_url', '')}
+                disabled={uploading}
+              >
+                <Icon name="Trash2" size={16} className="mr-2" />
+                Eliminar
+              </Button>
+            )}
+          </div>
         </div>
         
         <div className="space-y-4">
           {formData?.logo_url && (
-            <div className="flex items-center justify-center p-4 border-2 border-dashed border-border rounded-lg">
-              <img
-                src={formData?.logo_url}
-                alt="Logo actual"
-                className="max-h-32 max-w-full object-contain"
-              />
+            <div className="flex items-center justify-center p-4 border-2 border-dashed border-border rounded-lg bg-muted/30">
+              <div className="text-center">
+                <img
+                  src={formData?.logo_url}
+                  alt="Logo actual"
+                  className="max-h-32 max-w-full object-contain mx-auto mb-2"
+                />
+                <p className="text-xs text-muted-foreground">Logo actual</p>
+              </div>
             </div>
           )}
           
-          <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+          <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:bg-muted/30 transition-colors">
             <input
               type="file"
               accept="image/*"
@@ -270,19 +306,38 @@ const BrandingCustomizationTab = () => {
             />
             <label
               htmlFor="logo-upload"
-              className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`cursor-pointer block ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Icon name={uploading ? "Loader2" : "Upload"} 
                     size={32} 
                     className={`text-muted-foreground mx-auto mb-2 ${uploading ? 'animate-spin' : ''}`} />
-              <p className="text-sm text-primary hover:text-primary/80">
+              <p className="text-sm text-primary hover:text-primary/80 font-medium mb-1">
                 {uploading ? 'Subiendo logo...' : 'Seleccionar nuevo logo'}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-muted-foreground">
                 Formatos permitidos: JPG, PNG, SVG. Máximo 5MB
               </p>
             </label>
           </div>
+          
+          {/* Logo Preview in Sidebar Context */}
+          {formData?.logo_url && (
+            <div className="mt-4 p-4 bg-muted rounded-lg">
+              <h4 className="text-sm font-medium text-foreground mb-3">Vista previa en sidebar:</h4>
+              <div className="flex items-center space-x-3 p-3 bg-background rounded border">
+                <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-md flex-shrink-0 overflow-hidden">
+                  <img
+                    src={formData?.logo_url}
+                    alt="Preview"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <h1 className="text-lg font-semibold text-foreground">
+                  {formData?.nombre_empresa || 'Nombre de la Empresa'}
+                </h1>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

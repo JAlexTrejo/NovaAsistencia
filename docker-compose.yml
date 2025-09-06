@@ -1,0 +1,56 @@
+# Nova HR Docker Compose Configuration
+version: '3.8'
+
+services:
+  nova-hr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: nova-hr-app
+    ports:
+      - "8080:80"
+    environment:
+      - NGINX_HOST=localhost
+      - NGINX_PORT=80
+    volumes:
+      # Mount custom nginx configuration if needed
+      - ./nginx-site.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "app=nova-hr"
+      - "environment=production"
+    networks:
+      - nova-hr-network
+
+  # Optional: Add a reverse proxy for SSL termination
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   container_name: nova-hr-proxy
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #     - ./proxy.conf:/etc/nginx/conf.d/default.conf:ro
+  #   depends_on:
+  #     - nova-hr
+  #   restart: unless-stopped
+  #   networks:
+  #     - nova-hr-network
+
+networks:
+  nova-hr-network:
+    driver: bridge
+    name: nova-hr-net
+
+# Optional: Add volumes for persistent data
+# volumes:
+#   nova-hr-logs:
+#     driver: local

@@ -2,7 +2,6 @@ import React from "react";
 import { BrowserRouter, Routes as RouterRoutes, Route, Navigate } from "react-router-dom";
 import ErrorBoundary from './components/ErrorBoundary';
 import ScrollToTop from './components/ScrollToTop';
-import { AuthProvider } from "./contexts/AuthContext";
 import { useAuth } from "./contexts/AuthContext";
 
 // Page imports
@@ -25,6 +24,16 @@ import RealTimePayrollEstimationDashboardWithZeroStateHandling from "./pages/rea
 import AdvancedPayrollCalculationEngineWithComprehensiveWageManagement from "./pages/advanced-payroll-calculation-engine-with-comprehensive-wage-management";
 import RoleBasedPermissionEnforcementAndSecurityManagementSystem from "./pages/role-based-permission-enforcement-and-security-management-system";
 import PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration from "./pages/personalized-worker-dashboard-with-site-integration-and-team-collaboration";
+import ProductionDeploymentAndInfrastructureManagement from "./pages/production-deployment-and-infrastructure-management";
+import ProductionDatabaseSchemaManagementConsole from "./pages/production-database-schema-management-console";
+import FrontendArchitectureAndCodeQualityDashboard from "./pages/frontend-architecture-and-code-quality-dashboard";
+import ObrasFinancialControlManagement from "./pages/obras-financial-control-management";
+
+// New page imports
+import ProductionAuthenticationManagementSystem from "./pages/production-authentication-management-system";
+import ComprehensiveEmployeeRegistrationAndProfileManagement from "./pages/comprehensive-employee-registration-and-profile-management";
+import ProductionEnvironmentConfigurationDashboard from "./pages/production-environment-configuration-dashboard";
+import EnterpriseCodeQualityAndTestingCenter from "./pages/enterprise-code-quality-and-testing-center";
 
 // Route Protection Component
 function ProtectedRoute({ children, requiredRole = null }) {
@@ -164,7 +173,7 @@ function AppRoutes() {
         } 
       />
 
-      {/* Advanced Payroll Calculation Engine - NEW ROUTE */}
+      {/* Advanced Payroll Calculation Engine */}
       <Route 
         path="/advanced-payroll-calculation-engine-with-comprehensive-wage-management" 
         element={
@@ -174,12 +183,89 @@ function AppRoutes() {
         } 
       />
 
-      {/* Role-Based Permission Enforcement System - NEW ROUTE */}
+      {/* Role-Based Permission Enforcement System */}
       <Route 
         path="/role-based-permission-enforcement-and-security-management-system" 
         element={
           <ProtectedRoute requiredRole="superadmin">
             <RoleBasedPermissionEnforcementAndSecurityManagementSystem />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* NEW ROUTE - Obras Financial Control Management - Admin and SuperAdmin Only */}
+      <Route 
+        path="/admin/obras-financiero" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <ObrasFinancialControlManagement />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Production Deployment and Infrastructure Management - SuperAdmin Only */}
+      <Route 
+        path="/production-deployment-and-infrastructure-management" 
+        element={
+          <ProtectedRoute requiredRole="superadmin">
+            <ProductionDeploymentAndInfrastructureManagement />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Production Authentication and Employee Registration */}
+      <Route 
+        path="/production-authentication-management-system" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <ProductionAuthenticationManagementSystem />
+          </ProtectedRoute>
+        } 
+      />
+
+      <Route 
+        path="/comprehensive-employee-registration-and-profile-management" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <ComprehensiveEmployeeRegistrationAndProfileManagement />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* NEW ROUTES - Production Database and Code Quality Management */}
+      <Route 
+        path="/production-database-schema-management-console" 
+        element={
+          <ProtectedRoute requiredRole="superadmin">
+            <ProductionDatabaseSchemaManagementConsole />
+          </ProtectedRoute>
+        } 
+      />
+
+      <Route 
+        path="/frontend-architecture-and-code-quality-dashboard" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <FrontendArchitectureAndCodeQualityDashboard />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Production Environment and Code Quality */}
+      <Route 
+        path="/production-environment-configuration-dashboard" 
+        element={
+          <ProtectedRoute requiredRole="superadmin">
+            <ProductionEnvironmentConfigurationDashboard />
+          </ProtectedRoute>
+        } 
+      />
+
+      <Route 
+        path="/enterprise-code-quality-and-testing-center" 
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <EnterpriseCodeQualityAndTestingCenter />
           </ProtectedRoute>
         } 
       />
@@ -263,9 +349,7 @@ export default function Routes() {
     <BrowserRouter>
       <ErrorBoundary>
         <ScrollToTop />
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
+        <AppRoutes />
       </ErrorBoundary>
     </BrowserRouter>
   );

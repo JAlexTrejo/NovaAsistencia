@@ -1,366 +1,377 @@
 import { supabase } from '../lib/supabase';
 
-export const enhancedEmployeeService = {
-  // Get all employees with enhanced data
-  async getAllEmployeesWithPayroll(startDate, endDate) {
+class EnhancedEmployeeService {
+  // Get all employees with optional filters
+  async getEmployees(filters = {}) {
     try {
-      const { data: empleadosData, error: empleadosError } = await supabase
-        ?.from('empleados')
-        ?.select(`
-          id,
-          codigo_empleado,
-          salario_diario,
-          status,
-          deleted_at,
-          user_profiles:user_id (
-            id,
-            full_name,
-            email,
-            phone
+      let query = supabase?.from('employee_profiles')?.select(`
+          *,
+          construction_site:construction_sites!site_id(
+            id, name, address, manager_name, phone
           ),
-          obras:obra_id (
-            id,
-            nombre
+          supervisor:user_profiles!supervisor_id(
+            id, full_name, email, phone
           ),
-          supervisor:supervisor_id (
-            full_name
+          user_profile:user_profiles!user_id(
+            id, full_name, email, phone
           )
-        `)
-        ?.neq('status', 'deleted')
-        ?.order('user_profiles(full_name)', { ascending: true });
+        `)?.is('deleted_at', null)?.order('created_at', { ascending: false });
 
-      if (empleadosError) throw empleadosError;
-
-      // Calculate payroll data for each employee
-      const employeesWithPayroll = await Promise.all(
-        empleadosData?.map(async (emp) => {
-          const payrollData = await this.calculateEmployeePayroll(emp?.id, startDate, endDate);
-          
-          return {
-            id: emp?.id,
-            employeeCode: emp?.codigo_empleado,
-            name: emp?.user_profiles?.full_name || 'Sin nombre',
-            email: emp?.user_profiles?.email,
-            phone: emp?.user_profiles?.phone,
-            dailySalary: parseFloat(emp?.salario_diario || 0),
-            status: emp?.status,
-            site: emp?.obras?.nombre || 'Sin asignar',
-            siteId: emp?.obras?.id,
-            supervisor: emp?.supervisor?.full_name || 'Sin supervisor',
-            isDeleted: !!emp?.deleted_at,
-            ...payrollData
-          };
-        }) || []
-      );
-
-      return employeesWithPayroll;
-    } catch (error) {
-      if (error?.message?.includes('Failed to fetch')) {
-        throw new Error('No se puede conectar a la base de datos. Verifica tu conexión.');
+      // Apply filters
+      if (filters?.search) {
+        query = query?.or(`full_name.ilike.%${filters?.search}%,employee_id.ilike.%${filters?.search}%,email.ilike.%${filters?.search}%`);
       }
-      throw new Error(`Error al cargar empleados: ${error?.message}`);
-    }
-  },
 
-  // Calculate payroll for a single employee
-  async calculateEmployeePayroll(employeeId, startDate, endDate) {
+      if (filters?.site && filters?.site !== 'all') {
+        query = query?.eq('construction_site.name', filters?.site);
+      }
+
+      if (filters?.supervisor && filters?.supervisor !== 'all') {
+        query = query?.eq('supervisor.full_name', filters?.supervisor);
+      }
+
+      if (filters?.status && filters?.status?.length > 0) {
+        query = query?.in('status', filters?.status);
+      }
+
+      if (filters?.position && filters?.position !== 'all') {
+        query = query?.eq('position', filters?.position);
+      }
+
+      if (filters?.hireDateFrom) {
+        query = query?.gte('hire_date', filters?.hireDateFrom);
+      }
+
+      if (filters?.hireDateTo) {
+        query = query?.lte('hire_date', filters?.hireDateTo);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching employees:', error);
+        throw new Error(`Failed to fetch employees: ${error?.message}`);
+      }
+
+      // Transform data to match component expectations
+      return data?.map(employee => ({
+        id: employee?.id,
+        employeeId: employee?.employee_id,
+        name: employee?.full_name,
+        email: employee?.user_profile?.email || '',
+        phone: employee?.phone || employee?.user_profile?.phone || '',
+        idNumber: employee?.id_number || '',
+        birthDate: employee?.birth_date || '',
+        address: employee?.address || '',
+        emergencyContact: employee?.emergency_contact || '',
+        site: employee?.construction_site?.name || 'No asignado',
+        supervisor: employee?.supervisor?.full_name || 'No asignado',
+        hireDate: employee?.hire_date,
+        status: employee?.status,
+        position: employee?.position,
+        dailySalary: Number(employee?.daily_salary) || 0,
+        hourlyRate: Number(employee?.hourly_rate) || 0,
+        salaryType: employee?.salary_type || 'daily',
+        lastAttendance: employee?.last_attendance_date,
+        avatar: employee?.profile_picture_url || null,
+        // Additional fields for detail view
+        siteId: employee?.site_id,
+        supervisorId: employee?.supervisor_id,
+        userId: employee?.user_id,
+        createdAt: employee?.created_at,
+        updatedAt: employee?.updated_at
+      })) || [];
+
+    } catch (error) {
+      console.error('Error in getEmployees:', error);
+      throw error;
+    }
+  }
+
+  // Get single employee by ID
+  async getEmployeeById(employeeId) {
     try {
-      const { data, error } = await supabase
-        ?.rpc('calculate_weekly_payroll', {
-          p_employee_id: employeeId,
-          p_start_date: startDate,
-          p_end_date: endDate
+      const { data, error } = await supabase?.from('employee_profiles')?.select(`
+          *,
+          construction_site:construction_sites!site_id(
+            id, name, address, manager_name, phone
+          ),
+          supervisor:user_profiles!supervisor_id(
+            id, full_name, email, phone
+          ),
+          user_profile:user_profiles!user_id(
+            id, full_name, email, phone
+          )
+        `)?.eq('id', employeeId)?.is('deleted_at', null)?.single();
+
+      if (error) {
+        if (error?.code === 'PGRST116') {
+          throw new Error('Employee not found');
+        }
+        throw new Error(`Failed to fetch employee: ${error?.message}`);
+      }
+
+      // Transform data
+      return {
+        id: data?.id,
+        employeeId: data?.employee_id,
+        name: data?.full_name,
+        email: data?.user_profile?.email || '',
+        phone: data?.phone || data?.user_profile?.phone || '',
+        idNumber: data?.id_number || '',
+        birthDate: data?.birth_date || '',
+        address: data?.address || '',
+        emergencyContact: data?.emergency_contact || '',
+        site: data?.construction_site?.name || 'No asignado',
+        supervisor: data?.supervisor?.full_name || 'No asignado',
+        hireDate: data?.hire_date,
+        status: data?.status,
+        position: data?.position,
+        dailySalary: Number(data?.daily_salary) || 0,
+        hourlyRate: Number(data?.hourly_rate) || 0,
+        salaryType: data?.salary_type || 'daily',
+        lastAttendance: data?.last_attendance_date,
+        avatar: data?.profile_picture_url || null,
+        // Additional fields
+        siteId: data?.site_id,
+        supervisorId: data?.supervisor_id,
+        userId: data?.user_id,
+        createdAt: data?.created_at,
+        updatedAt: data?.updated_at
+      };
+
+    } catch (error) {
+      console.error('Error in getEmployeeById:', error);
+      throw error;
+    }
+  }
+
+  // Create new employee
+  async createEmployee(employeeData) {
+    try {
+      const { data, error } = await supabase?.from('employee_profiles')?.insert([{
+          employee_id: employeeData?.employeeId,
+          full_name: employeeData?.name,
+          phone: employeeData?.phone,
+          id_number: employeeData?.idNumber,
+          birth_date: employeeData?.birthDate,
+          address: employeeData?.address,
+          emergency_contact: employeeData?.emergencyContact,
+          site_id: employeeData?.siteId,
+          supervisor_id: employeeData?.supervisorId,
+          hire_date: employeeData?.hireDate,
+          position: employeeData?.position,
+          daily_salary: employeeData?.dailySalary || 0,
+          hourly_rate: employeeData?.hourlyRate || 0,
+          salary_type: employeeData?.salaryType || 'daily',
+          status: 'active',
+          user_id: employeeData?.userId || null
+        }])?.select()?.single();
+
+      if (error) {
+        console.error('Error creating employee:', error);
+        throw new Error(`Failed to create employee: ${error?.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in createEmployee:', error);
+      throw error;
+    }
+  }
+
+  // Update employee
+  async updateEmployee(employeeId, updates) {
+    try {
+      const updateData = {};
+
+      // Map frontend field names to database column names
+      if (updates?.name !== undefined) updateData.full_name = updates?.name;
+      if (updates?.phone !== undefined) updateData.phone = updates?.phone;
+      if (updates?.idNumber !== undefined) updateData.id_number = updates?.idNumber;
+      if (updates?.birthDate !== undefined) updateData.birth_date = updates?.birthDate;
+      if (updates?.address !== undefined) updateData.address = updates?.address;
+      if (updates?.emergencyContact !== undefined) updateData.emergency_contact = updates?.emergencyContact;
+      if (updates?.siteId !== undefined) updateData.site_id = updates?.siteId;
+      if (updates?.supervisorId !== undefined) updateData.supervisor_id = updates?.supervisorId;
+      if (updates?.hireDate !== undefined) updateData.hire_date = updates?.hireDate;
+      if (updates?.position !== undefined) updateData.position = updates?.position;
+      if (updates?.dailySalary !== undefined) updateData.daily_salary = updates?.dailySalary;
+      if (updates?.hourlyRate !== undefined) updateData.hourly_rate = updates?.hourlyRate;
+      if (updates?.salaryType !== undefined) updateData.salary_type = updates?.salaryType;
+      if (updates?.status !== undefined) updateData.status = updates?.status;
+
+      const { data, error } = await supabase?.from('employee_profiles')?.update(updateData)?.eq('id', employeeId)?.select()?.single();
+
+      if (error) {
+        console.error('Error updating employee:', error);
+        throw new Error(`Failed to update employee: ${error?.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in updateEmployee:', error);
+      throw error;
+    }
+  }
+
+  // Soft delete employee
+  async deleteEmployee(employeeId, userId) {
+    try {
+      // Use the soft delete function
+      const { data, error } = await supabase?.rpc('soft_delete_employee', {
+          employee_uuid: employeeId,
+          deleted_by_user: userId
         });
 
       if (error) {
-        console.error('Error calculating payroll for employee:', employeeId, error);
-        return {
-          workedDays: 0,
-          regularHours: 0,
-          overtimeHours: 0,
-          basePay: 0,
-          overtimePay: 0,
-          grossPay: 0,
-          bonuses: 0,
-          deductions: 0,
-          netPay: 0
-        };
+        console.error('Error deleting employee:', error);
+        throw new Error(`Failed to delete employee: ${error?.message}`);
       }
 
-      const result = data?.[0] || {};
-      return {
-        workedDays: result?.dias_trabajados || 0,
-        regularHours: parseFloat(result?.horas_regulares || 0),
-        overtimeHours: parseFloat(result?.horas_extra || 0),
-        basePay: parseFloat(result?.salario_base || 0),
-        overtimePay: parseFloat(result?.pago_horas_extra || 0),
-        grossPay: parseFloat(result?.salario_bruto || 0),
-        bonuses: 0, // Will be calculated from adjustments
-        deductions: 0, // Will be calculated from adjustments
-        netPay: parseFloat(result?.salario_bruto || 0)
-      };
+      return data;
     } catch (error) {
-      console.error('Error in calculateEmployeePayroll:', error);
-      return {
-        workedDays: 0,
-        regularHours: 0,
-        overtimeHours: 0,
-        basePay: 0,
-        overtimePay: 0,
-        grossPay: 0,
-        bonuses: 0,
-        deductions: 0,
-        netPay: 0
-      };
+      console.error('Error in deleteEmployee:', error);
+      throw error;
     }
-  },
+  }
 
-  // Soft delete an employee
-  async deleteEmployee(employeeId, userId) {
+  // Get employee statistics
+  async getEmployeeStats() {
     try {
-      const { data, error } = await supabase
-        ?.rpc('soft_delete_employee', {
-          p_employee_id: employeeId
-        });
+      const { data, error } = await supabase?.from('employee_profiles')?.select('status, position')?.is('deleted_at', null);
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(`Failed to fetch employee stats: ${error?.message}`);
+      }
 
-      // Log the deletion activity
-      await supabase?.from('logs_actividad')?.insert({
-        usuario_id: userId,
-        rol: 'admin',
-        accion: 'employee_deleted',
-        modulo: 'Employee Management',
-        descripcion: `Empleado eliminado: ${employeeId}`
+      const stats = {
+        total: data?.length || 0,
+        active: data?.filter(emp => emp?.status === 'active')?.length || 0,
+        inactive: data?.filter(emp => emp?.status === 'inactive')?.length || 0,
+        suspended: data?.filter(emp => emp?.status === 'suspended')?.length || 0,
+        positions: {}
+      };
+
+      // Count by positions
+      data?.forEach(emp => {
+        if (emp?.position) {
+          stats.positions[emp?.position] = (stats?.positions?.[emp?.position] || 0) + 1;
+        }
       });
 
-      return { success: true, data };
+      return stats;
     } catch (error) {
-      throw new Error(`Error al eliminar empleado: ${error?.message}`);
+      console.error('Error in getEmployeeStats:', error);
+      throw error;
     }
-  },
+  }
 
-  // Restore a deleted employee
-  async restoreEmployee(employeeId, userId) {
+  // Get unique sites for filters
+  async getSites() {
     try {
-      const { data, error } = await supabase
-        ?.from('empleados')
-        ?.update({
-          status: 'active',
-          deleted_at: null,
-          updated_at: new Date()?.toISOString()
-        })
-        ?.eq('id', employeeId)
-        ?.select()
-        ?.single();
+      const { data, error } = await supabase?.from('construction_sites')?.select('id, name, address')?.order('name');
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(`Failed to fetch sites: ${error?.message}`);
+      }
 
-      // Log the restoration activity
-      await supabase?.from('logs_actividad')?.insert({
-        usuario_id: userId,
-        rol: 'admin',
-        accion: 'employee_restored',
-        modulo: 'Employee Management',
-        descripcion: `Empleado restaurado: ${employeeId}`
-      });
-
-      return {
-        id: data?.id,
-        status: data?.status,
-        deleted_at: data?.deleted_at
-      };
+      return data || [];
     } catch (error) {
-      throw new Error(`Error al restaurar empleado: ${error?.message}`);
+      console.error('Error in getSites:', error);
+      throw error;
     }
-  },
+  }
 
-  // Get deleted employees
-  async getDeletedEmployees() {
+  // Get supervisors for filters
+  async getSupervisors() {
     try {
-      const { data, error } = await supabase
-        ?.from('empleados')
-        ?.select(`
-          id,
-          codigo_empleado,
-          deleted_at,
-          user_profiles:user_id (
-            full_name,
-            email
+      const { data, error } = await supabase?.from('user_profiles')?.select('id, full_name, email')?.in('role', ['supervisor', 'admin', 'superadmin'])?.order('full_name');
+
+      if (error) {
+        throw new Error(`Failed to fetch supervisors: ${error?.message}`);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getSupervisors:', error);
+      throw error;
+    }
+  }
+
+  // Bulk update employees
+  async bulkUpdateEmployees(employeeIds, updates) {
+    try {
+      const { data, error } = await supabase?.from('employee_profiles')?.update(updates)?.in('id', employeeIds)?.select();
+
+      if (error) {
+        throw new Error(`Failed to bulk update employees: ${error?.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in bulkUpdateEmployees:', error);
+      throw error;
+    }
+  }
+
+  // Get employee by user ID
+  async getEmployeeByUserId(userId) {
+    try {
+      const { data, error } = await supabase?.from('employee_profiles')?.select(`
+          *,
+          construction_site:construction_sites!site_id(
+            id, name, address, manager_name, phone
           ),
-          obras:obra_id (nombre)
-        `)
-        ?.eq('status', 'deleted')
-        ?.order('deleted_at', { ascending: false });
+          supervisor:user_profiles!supervisor_id(
+            id, full_name, email, phone
+          )
+        `)?.eq('user_id', userId)?.is('deleted_at', null)?.single();
 
-      if (error) throw error;
+      if (error) {
+        if (error?.code === 'PGRST116') {
+          return null; // Employee profile not found
+        }
+        throw new Error(`Failed to fetch employee profile: ${error?.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getEmployeeByUserId:', error);
+      throw error;
+    }
+  }
+
+  // Search employees with real-time suggestions
+  async searchEmployees(searchTerm, limit = 10) {
+    try {
+      if (!searchTerm || searchTerm?.length < 2) {
+        return [];
+      }
+
+      const { data, error } = await supabase?.from('employee_profiles')?.select(`
+          id,
+          employee_id,
+          full_name,
+          construction_site:construction_sites!site_id(name)
+        `)?.or(`full_name.ilike.%${searchTerm}%,employee_id.ilike.%${searchTerm}%`)?.is('deleted_at', null)?.eq('status', 'active')?.limit(limit);
+
+      if (error) {
+        throw new Error(`Failed to search employees: ${error?.message}`);
+      }
 
       return data?.map(emp => ({
         id: emp?.id,
-        employeeCode: emp?.codigo_empleado,
-        name: emp?.user_profiles?.full_name,
-        email: emp?.user_profiles?.email,
-        site: emp?.obras?.nombre,
-        deletedAt: emp?.deleted_at
+        employeeId: emp?.employee_id,
+        name: emp?.full_name,
+        site: emp?.construction_site?.name || 'No asignado'
       })) || [];
+
     } catch (error) {
-      throw new Error(`Error al obtener empleados eliminados: ${error?.message}`);
-    }
-  },
-
-  // Create new employee
-  async createEmployee(employeeData, userId) {
-    try {
-      // First create user profile if needed
-      const userProfileData = {
-        email: employeeData?.email,
-        full_name: employeeData?.fullName,
-        phone: employeeData?.phone,
-        role: 'user'
-      };
-
-      const { data: userProfile, error: userError } = await supabase
-        ?.from('user_profiles')
-        ?.insert(userProfileData)
-        ?.select()
-        ?.single();
-
-      if (userError) throw userError;
-
-      // Then create employee record
-      const { data: employee, error: employeeError } = await supabase
-        ?.from('empleados')
-        ?.insert({
-          user_id: userProfile?.id,
-          codigo_empleado: employeeData?.employeeCode,
-          numero_documento: employeeData?.idNumber,
-          fecha_nacimiento: employeeData?.birthDate,
-          direccion: employeeData?.address,
-          contacto_emergencia: employeeData?.emergencyContact,
-          obra_id: employeeData?.siteId,
-          supervisor_id: employeeData?.supervisorId,
-          fecha_contratacion: employeeData?.hireDate,
-          salario_diario: employeeData?.dailySalary,
-          status: 'active'
-        })
-        ?.select()
-        ?.single();
-
-      if (employeeError) throw employeeError;
-
-      // Log the creation activity
-      await supabase?.from('logs_actividad')?.insert({
-        usuario_id: userId,
-        rol: 'admin',
-        accion: 'employee_created',
-        modulo: 'Employee Management',
-        descripcion: `Nuevo empleado creado: ${employeeData?.fullName}`
-      });
-
-      return {
-        id: employee?.id,
-        employeeCode: employee?.codigo_empleado,
-        name: userProfile?.full_name,
-        email: userProfile?.email
-      };
-    } catch (error) {
-      throw new Error(`Error al crear empleado: ${error?.message}`);
-    }
-  },
-
-  // Update employee
-  async updateEmployee(employeeId, updateData, userId) {
-    try {
-      // Update employee record
-      const employeeUpdates = {};
-      if (updateData?.employeeCode) employeeUpdates.codigo_empleado = updateData?.employeeCode;
-      if (updateData?.idNumber) employeeUpdates.numero_documento = updateData?.idNumber;
-      if (updateData?.birthDate) employeeUpdates.fecha_nacimiento = updateData?.birthDate;
-      if (updateData?.address) employeeUpdates.direccion = updateData?.address;
-      if (updateData?.emergencyContact) employeeUpdates.contacto_emergencia = updateData?.emergencyContact;
-      if (updateData?.siteId !== undefined) employeeUpdates.obra_id = updateData?.siteId;
-      if (updateData?.supervisorId !== undefined) employeeUpdates.supervisor_id = updateData?.supervisorId;
-      if (updateData?.hireDate) employeeUpdates.fecha_contratacion = updateData?.hireDate;
-      if (updateData?.dailySalary !== undefined) employeeUpdates.salario_diario = updateData?.dailySalary;
-      if (updateData?.status) employeeUpdates.status = updateData?.status;
-
-      if (Object.keys(employeeUpdates)?.length > 0) {
-        employeeUpdates.updated_at = new Date()?.toISOString();
-
-        const { data: employee, error: employeeError } = await supabase
-          ?.from('empleados')
-          ?.update(employeeUpdates)
-          ?.eq('id', employeeId)
-          ?.select()
-          ?.single();
-
-        if (employeeError) throw employeeError;
-      }
-
-      // Update user profile if needed
-      const userUpdates = {};
-      if (updateData?.fullName) userUpdates.full_name = updateData?.fullName;
-      if (updateData?.email) userUpdates.email = updateData?.email;
-      if (updateData?.phone) userUpdates.phone = updateData?.phone;
-
-      if (Object.keys(userUpdates)?.length > 0) {
-        const { error: userError } = await supabase
-          ?.from('empleados')
-          ?.select('user_id')
-          ?.eq('id', employeeId)
-          ?.single()
-          ?.then(({ data, error }) => {
-            if (error) throw error;
-            return supabase
-              ?.from('user_profiles')
-              ?.update(userUpdates)
-              ?.eq('id', data?.user_id);
-          });
-
-        if (userError) throw userError;
-      }
-
-      // Log the update activity
-      await supabase?.from('logs_actividad')?.insert({
-        usuario_id: userId,
-        rol: 'admin',
-        accion: 'employee_updated',
-        modulo: 'Employee Management',
-        descripcion: `Empleado actualizado: ${employeeId}`
-      });
-
-      return { success: true };
-    } catch (error) {
-      throw new Error(`Error al actualizar empleado: ${error?.message}`);
-    }
-  },
-
-  // Bulk operations
-  async bulkDeleteEmployees(employeeIds, userId) {
-    try {
-      const { data, error } = await supabase
-        ?.from('empleados')
-        ?.update({
-          status: 'deleted',
-          deleted_at: new Date()?.toISOString(),
-          updated_at: new Date()?.toISOString()
-        })
-        ?.in('id', employeeIds);
-
-      if (error) throw error;
-
-      // Log the bulk deletion
-      await supabase?.from('logs_actividad')?.insert({
-        usuario_id: userId,
-        rol: 'admin',
-        accion: 'bulk_employee_deletion',
-        modulo: 'Employee Management',
-        descripcion: `Eliminación masiva de ${employeeIds?.length} empleados`
-      });
-
-      return { success: true, deletedCount: employeeIds?.length };
-    } catch (error) {
-      throw new Error(`Error en eliminación masiva: ${error?.message}`);
+      console.error('Error in searchEmployees:', error);
+      throw error;
     }
   }
-};
+}
+
+export default new EnhancedEmployeeService();

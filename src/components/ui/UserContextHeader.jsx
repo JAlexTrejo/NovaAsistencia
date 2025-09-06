@@ -1,236 +1,193 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useState } from 'react';
 import Icon from '../AppIcon';
+import { useAuth } from '../../contexts/AuthContext';
 
-const UserContextHeader = ({ 
-  user = null,
-  onLogout = null,
-  onProfileClick = null,
-  onSiteChange = () => {}
-}) => {
+const UserContextHeader = ({ onLogout }) => {
+  const { getCurrentUserContext, signOut, loading } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
-  const navigate = useNavigate();
-  const { user: authUser, userProfile, signOut } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Use auth context user if no user prop provided
-  const currentUser = user || {
-    name: userProfile?.full_name || authUser?.email?.split('@')?.[0] || 'Usuario',
-    role: userProfile?.role || 'user',
-    site: userProfile?.site || 'Sin asignar',
-    avatar: null
-  };
-
-  const availableSites = [
-    { id: 1, name: 'Obra Central', status: 'active' },
-    { id: 2, name: 'Proyecto Norte', status: 'active' },
-    { id: 3, name: 'Edificio Sur', status: 'maintenance' }
-  ];
-
-  const roleColors = {
-    'superadmin': 'bg-error text-error-foreground',
-    'admin': 'bg-warning text-warning-foreground',
-    'supervisor': 'bg-primary text-primary-foreground',
-    'user': 'bg-secondary text-secondary-foreground'
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef?.current && !dropdownRef?.current?.contains(event.target)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const userContext = getCurrentUserContext();
 
   const handleLogout = async () => {
-    setIsDropdownOpen(false);
-    if (onLogout) {
-      onLogout();
-    } else {
+    if (isLoggingOut) return;
+    
+    setIsLoggingOut(true);
+    try {
       await signOut();
-      navigate('/login');
+      if (onLogout) {
+        onLogout();
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setIsLoggingOut(false);
+      setIsDropdownOpen(false);
     }
   };
 
-  const handleProfileClick = () => {
-    setIsDropdownOpen(false);
-    if (onProfileClick) {
-      onProfileClick();
-    } else {
-      navigate('/profile-center');
-    }
+  // Show loading state if user context is still loading
+  if (loading || !userContext) {
+    return (
+      <div className="flex items-center space-x-3">
+        <div className="animate-pulse flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
+          <div className="hidden md:block">
+            <div className="w-24 h-4 bg-gray-300 rounded mb-1"></div>
+            <div className="w-16 h-3 bg-gray-200 rounded"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const getRoleDisplayName = (role) => {
+    const roleMap = {
+      'superadmin': 'Super Admin',
+      'admin': 'Administrador',
+      'supervisor': 'Supervisor',
+      'user': 'Empleado'
+    };
+    return roleMap?.[role] || role;
   };
 
-  const handleSiteChange = (site) => {
-    setIsDropdownOpen(false);
-    onSiteChange(site);
-  };
-
-  const handleHomeNavigation = () => {
-    setIsDropdownOpen(false);
-    // Navigate to appropriate home based on user role
-    const role = currentUser?.role?.toLowerCase();
-    switch (role) {
-      case 'superadmin': navigate('/admin/system');
-        break;
-      case 'admin': navigate('/admin/employees');
-        break;
-      case 'supervisor': navigate('/supervisor/sites');
-        break;
-      default:
-        navigate('/dashboard');
-    }
-  };
-
-  const getInitials = (name) => {
-    return name
-      .split(' ')?.map(word => word?.charAt(0))?.join('')?.toUpperCase()?.slice(0, 2);
+  const getRoleColor = (role) => {
+    const colorMap = {
+      'superadmin': 'text-purple-600',
+      'admin': 'text-red-600',
+      'supervisor': 'text-blue-600',
+      'user': 'text-green-600'
+    };
+    return colorMap?.[role] || 'text-gray-600';
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      {/* User Info Button */}
+    <div className="relative">
       <button
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-        className="flex items-center space-x-3 p-2 rounded-lg hover:bg-muted transition-all duration-150 ease-out-cubic hover:scale-98 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
       >
         {/* Avatar */}
-        <div className="flex-shrink-0">
-          {currentUser?.avatar ? (
-            <img
-              src={currentUser?.avatar}
-              alt={currentUser?.name}
-              className="w-8 h-8 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
-              {getInitials(currentUser?.name)}
-            </div>
-          )}
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+          {userContext?.name?.charAt(0)?.toUpperCase() || 'U'}
         </div>
 
-        {/* User Details - Hidden on mobile */}
+        {/* User Info - Hidden on mobile */}
         <div className="hidden md:block text-left">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-foreground">{currentUser?.name}</span>
-            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${roleColors?.[currentUser?.role] || roleColors?.user}`}>
-              {currentUser?.role}
-            </span>
+          <div className="text-sm font-medium text-gray-900">
+            {userContext?.name || 'Usuario'}
           </div>
-          <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-            <Icon name="MapPin" size={12} />
-            <span>{currentUser?.site}</span>
+          <div className={`text-xs font-medium ${getRoleColor(userContext?.role)}`}>
+            {getRoleDisplayName(userContext?.role)}
+            {userContext?.isEmployee && userContext?.site && (
+              <span className="text-gray-500 ml-1">• {userContext?.site}</span>
+            )}
           </div>
         </div>
 
-        {/* Dropdown Arrow */}
+        {/* Dropdown Icon */}
         <Icon 
-          name={isDropdownOpen ? 'ChevronUp' : 'ChevronDown'} 
+          name={isDropdownOpen ? "ChevronUp" : "ChevronDown"} 
           size={16} 
-          className="text-muted-foreground transition-transform duration-150 ease-out-cubic"
+          className="text-gray-400 hidden md:block" 
         />
       </button>
 
       {/* Dropdown Menu */}
       {isDropdownOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-popover border border-border rounded-lg shadow-lg z-50 transition-all duration-200 ease-out-cubic">
-          {/* User Info Header */}
-          <div className="p-4 border-b border-border">
-            <div className="flex items-center space-x-3">
-              <div className="flex-shrink-0">
-                {currentUser?.avatar ? (
-                  <img
-                    src={currentUser?.avatar}
-                    alt={currentUser?.name}
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
-                    {getInitials(currentUser?.name)}
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setIsDropdownOpen(false)}
+          />
+          
+          {/* Dropdown Content */}
+          <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg font-medium">
+                  {userContext?.name?.charAt(0)?.toUpperCase() || 'U'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900 truncate">
+                    {userContext?.name || 'Usuario'}
                   </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-popover-foreground truncate">{currentUser?.name}</p>
-                <div className="flex items-center space-x-2 mt-1">
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${roleColors?.[currentUser?.role] || roleColors?.user}`}>
-                    {currentUser?.role}
-                  </span>
+                  <div className="text-xs text-gray-500 truncate">
+                    {userContext?.email}
+                  </div>
+                  <div className={`text-xs font-medium ${getRoleColor(userContext?.role)}`}>
+                    {getRoleDisplayName(userContext?.role)}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Site Selection */}
-          <div className="p-2 border-b border-border">
-            <div className="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Sitio Actual
-            </div>
-            {availableSites?.map((site) => (
-              <button
-                key={site?.id}
-                onClick={() => handleSiteChange(site)}
-                className={`
-                  w-full flex items-center justify-between px-3 py-2 text-sm rounded-md
-                  transition-all duration-150 ease-out-cubic hover:bg-muted
-                  ${site?.name === currentUser?.site ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}
-                `}
-              >
+            {/* User Details */}
+            <div className="p-4 space-y-3 text-sm">
+              {userContext?.isEmployee && (
+                <>
+                  <div className="flex items-center space-x-2">
+                    <Icon name="Building2" size={16} className="text-gray-400" />
+                    <span className="text-gray-600">Obra:</span>
+                    <span className="font-medium">{userContext?.site}</span>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Icon name="User" size={16} className="text-gray-400" />
+                    <span className="text-gray-600">Supervisor:</span>
+                    <span className="font-medium">{userContext?.supervisor}</span>
+                  </div>
+
+                  {userContext?.position && (
+                    <div className="flex items-center space-x-2">
+                      <Icon name="Briefcase" size={16} className="text-gray-400" />
+                      <span className="text-gray-600">Puesto:</span>
+                      <span className="font-medium capitalize">{userContext?.position?.replace('_', ' ')}</span>
+                    </div>
+                  )}
+
+                  {userContext?.employeeId && (
+                    <div className="flex items-center space-x-2">
+                      <Icon name="Hash" size={16} className="text-gray-400" />
+                      <span className="text-gray-600">ID Empleado:</span>
+                      <span className="font-medium">{userContext?.employeeId}</span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {userContext?.phone && (
                 <div className="flex items-center space-x-2">
-                  <Icon name="MapPin" size={14} />
-                  <span>{site?.name}</span>
+                  <Icon name="Phone" size={16} className="text-gray-400" />
+                  <span className="text-gray-600">Teléfono:</span>
+                  <span className="font-medium">{userContext?.phone}</span>
                 </div>
-                {site?.name === currentUser?.site && (
-                  <Icon name="Check" size={14} className="text-success" />
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="border-t border-gray-200">
+              <button
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center space-x-2 disabled:opacity-50"
+              >
+                {isLoggingOut ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                    <span>Cerrando sesión...</span>
+                  </>
+                ) : (
+                  <>
+                    <Icon name="LogOut" size={16} />
+                    <span>Cerrar Sesión</span>
+                  </>
                 )}
               </button>
-            ))}
+            </div>
           </div>
-
-          {/* Menu Items */}
-          <div className="p-2">
-            <button
-              onClick={handleHomeNavigation}
-              className="w-full flex items-center px-3 py-2 text-sm text-popover-foreground hover:bg-muted rounded-md transition-all duration-150 ease-out-cubic"
-            >
-              <Icon name="Home" size={16} className="mr-3 text-muted-foreground" />
-              Inicio
-            </button>
-
-            <button
-              onClick={handleProfileClick}
-              className="w-full flex items-center px-3 py-2 text-sm text-popover-foreground hover:bg-muted rounded-md transition-all duration-150 ease-out-cubic"
-            >
-              <Icon name="User" size={16} className="mr-3 text-muted-foreground" />
-              Mi Perfil
-            </button>
-            
-            <button
-              onClick={() => {
-                setIsDropdownOpen(false);
-                navigate('/admin/system');
-              }}
-              className="w-full flex items-center px-3 py-2 text-sm text-popover-foreground hover:bg-muted rounded-md transition-all duration-150 ease-out-cubic"
-            >
-              <Icon name="Settings" size={16} className="mr-3 text-muted-foreground" />
-              Configuración
-            </button>
-
-            <div className="border-t border-border my-2"></div>
-
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center px-3 py-2 text-sm text-error hover:bg-error hover:text-error-foreground rounded-md transition-all duration-150 ease-out-cubic"
-            >
-              <Icon name="LogOut" size={16} className="mr-3" />
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
+        </>
       )}
     </div>
   );

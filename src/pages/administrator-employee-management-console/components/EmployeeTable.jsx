@@ -11,7 +11,11 @@ const EmployeeTable = ({
   onEmployeeClick,
   onSort,
   sortConfig,
-  userRole = 'admin'
+  onDelete,
+  onRestore,
+  userRole = 'admin',
+  showDeleteActions = false,
+  loading = false
 }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
 
@@ -20,7 +24,8 @@ const EmployeeTable = ({
       'active': 'bg-success text-success-foreground',
       'inactive': 'bg-secondary text-secondary-foreground',
       'suspended': 'bg-warning text-warning-foreground',
-      'terminated': 'bg-error text-error-foreground'
+      'terminated': 'bg-error text-error-foreground',
+      'deleted': 'bg-red-100 text-red-800'
     };
     return colors?.[status] || colors?.inactive;
   };
@@ -30,12 +35,14 @@ const EmployeeTable = ({
       'active': 'Activo',
       'inactive': 'Inactivo',
       'suspended': 'Suspendido',
-      'terminated': 'Terminado'
+      'terminated': 'Terminado',
+      'deleted': 'Eliminado'
     };
     return labels?.[status] || status;
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString)?.toLocaleDateString('es-ES', {
       day: '2-digit',
       month: '2-digit',
@@ -69,8 +76,25 @@ const EmployeeTable = ({
   const isAllSelected = employees?.length > 0 && selectedEmployees?.length === employees?.length;
   const isIndeterminate = selectedEmployees?.length > 0 && selectedEmployees?.length < employees?.length;
 
+  // Helper function to handle employee row click
+  const handleEmployeeRowClick = (employee, event) => {
+    // Prevent row click when clicking on action buttons
+    if (event?.target?.closest('button') || event?.target?.closest('.action-button')) {
+      return;
+    }
+    onEmployeeClick?.(employee);
+  };
+
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
+      {/* Loading State */}
+      {loading && employees?.length === 0 && (
+        <div className="p-12 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Cargando empleados...</p>
+        </div>
+      )}
+
       {/* Table Header */}
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -83,28 +107,28 @@ const EmployeeTable = ({
                   ref={(el) => {
                     if (el) el.indeterminate = isIndeterminate;
                   }}
-                  onChange={(e) => onSelectAll(e?.target?.checked)}
+                  onChange={(e) => onSelectAll?.(e?.target?.checked)}
                   className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
                 />
               </th>
               
               <th className="text-left p-4">
                 <button
-                  onClick={() => handleSort('employeeId')}
+                  onClick={() => handleSort('employee_id')}
                   className="flex items-center space-x-1 text-sm font-medium text-foreground hover:text-primary transition-colors duration-150 ease-out-cubic"
                 >
                   <span>ID</span>
-                  <Icon name={getSortIcon('employeeId')} size={14} />
+                  <Icon name={getSortIcon('employee_id')} size={14} />
                 </button>
               </th>
               
               <th className="text-left p-4">
                 <button
-                  onClick={() => handleSort('name')}
+                  onClick={() => handleSort('full_name')}
                   className="flex items-center space-x-1 text-sm font-medium text-foreground hover:text-primary transition-colors duration-150 ease-out-cubic"
                 >
                   <span>Empleado</span>
-                  <Icon name={getSortIcon('name')} size={14} />
+                  <Icon name={getSortIcon('full_name')} size={14} />
                 </button>
               </th>
               
@@ -130,11 +154,11 @@ const EmployeeTable = ({
               
               <th className="text-left p-4">
                 <button
-                  onClick={() => handleSort('hireDate')}
+                  onClick={() => handleSort('hire_date')}
                   className="flex items-center space-x-1 text-sm font-medium text-foreground hover:text-primary transition-colors duration-150 ease-out-cubic"
                 >
                   <span>Fecha de contratación</span>
-                  <Icon name={getSortIcon('hireDate')} size={14} />
+                  <Icon name={getSortIcon('hire_date')} size={14} />
                 </button>
               </th>
               
@@ -150,11 +174,11 @@ const EmployeeTable = ({
               
               <th className="text-left p-4">
                 <button
-                  onClick={() => handleSort('lastAttendance')}
+                  onClick={() => handleSort('last_attendance_date')}
                   className="flex items-center space-x-1 text-sm font-medium text-foreground hover:text-primary transition-colors duration-150 ease-out-cubic"
                 >
                   <span>Última asistencia</span>
-                  <Icon name={getSortIcon('lastAttendance')} size={14} />
+                  <Icon name={getSortIcon('last_attendance_date')} size={14} />
                 </button>
               </th>
               
@@ -171,47 +195,48 @@ const EmployeeTable = ({
                 className={`
                   border-b border-border hover:bg-muted/30 transition-colors duration-150 ease-out-cubic cursor-pointer
                   ${selectedEmployees?.includes(employee?.id) ? 'bg-primary/5' : ''}
+                  ${employee?.status === 'deleted' ? 'bg-red-50' : ''}
                 `}
                 onMouseEnter={() => setHoveredRow(employee?.id)}
                 onMouseLeave={() => setHoveredRow(null)}
-                onClick={() => onEmployeeClick(employee)}
+                onClick={(e) => handleEmployeeRowClick(employee, e)}
               >
                 <td className="p-4" onClick={(e) => e?.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={selectedEmployees?.includes(employee?.id)}
-                    onChange={(e) => onEmployeeSelect(employee?.id, e?.target?.checked)}
+                    onChange={(e) => onEmployeeSelect?.(employee?.id, e?.target?.checked)}
                     className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
                   />
                 </td>
                 
                 <td className="p-4">
                   <span className="text-sm font-mono text-muted-foreground">
-                    {employee?.employeeId}
+                    {employee?.employee_id || employee?.employeeId || 'N/A'}
                   </span>
                 </td>
                 
                 <td className="p-4">
                   <div className="flex items-center space-x-3">
                     <div className="flex-shrink-0">
-                      {employee?.avatar ? (
+                      {employee?.profile_picture_url || employee?.avatar ? (
                         <Image
-                          src={employee?.avatar}
-                          alt={employee?.name}
+                          src={employee?.profile_picture_url || employee?.avatar}
+                          alt={employee?.full_name || employee?.name}
                           className="w-8 h-8 rounded-full object-cover"
                         />
                       ) : (
                         <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium">
-                          {employee?.name?.split(' ')?.map(n => n?.[0])?.join('')?.toUpperCase()}
+                          {(employee?.full_name || employee?.name || '')?.split(' ')?.map(n => n?.[0])?.join('')?.toUpperCase()}
                         </div>
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground truncate">
-                        {employee?.name}
+                        {employee?.full_name || employee?.name}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {employee?.email}
+                        {employee?.user_profiles?.email || employee?.email || 'Sin email'}
                       </p>
                     </div>
                   </div>
@@ -220,17 +245,21 @@ const EmployeeTable = ({
                 <td className="p-4">
                   <div className="flex items-center space-x-2">
                     <Icon name="MapPin" size={14} className="text-muted-foreground" />
-                    <span className="text-sm text-foreground">{employee?.site}</span>
+                    <span className="text-sm text-foreground">
+                      {employee?.construction_sites?.name || employee?.site || 'Sin asignar'}
+                    </span>
                   </div>
                 </td>
                 
                 <td className="p-4">
-                  <span className="text-sm text-foreground">{employee?.supervisor}</span>
+                  <span className="text-sm text-foreground">
+                    {employee?.supervisor?.full_name || employee?.supervisor || 'Sin supervisor'}
+                  </span>
                 </td>
                 
                 <td className="p-4">
                   <span className="text-sm text-muted-foreground">
-                    {formatDate(employee?.hireDate)}
+                    {formatDate(employee?.hire_date || employee?.hireDate)}
                   </span>
                 </td>
                 
@@ -242,43 +271,84 @@ const EmployeeTable = ({
                 
                 <td className="p-4">
                   <span className="text-sm text-muted-foreground">
-                    {formatLastAttendance(employee?.lastAttendance)}
+                    {formatLastAttendance(employee?.last_attendance_date || employee?.lastAttendance)}
                   </span>
                 </td>
                 
                 <td className="p-4" onClick={(e) => e?.stopPropagation()}>
-                  <div className="flex items-center justify-center space-x-1">
+                  <div className="flex items-center justify-center space-x-1 action-button">
+                    {/* View Button */}
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => onEmployeeClick(employee)}
+                      onClick={() => onEmployeeClick?.(employee)}
                       iconName="Eye"
                       iconSize={16}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 ease-out-cubic"
+                      className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
+                      title="Ver detalles"
                     />
                     
                     {hoveredRow === employee?.id && (
                       <>
+                        {/* Edit Button */}
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={(e) => {
                             e?.stopPropagation();
-                            // Handle edit action
+                            onEmployeeClick?.(employee);
                           }}
                           iconName="Edit"
                           iconSize={16}
+                          className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
+                          title="Editar empleado"
                         />
                         
+                        {/* Delete/Restore Buttons */}
+                        {showDeleteActions && (
+                          <>
+                            {employee?.status === 'deleted' ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => {
+                                  e?.stopPropagation();
+                                  onRestore?.(employee);
+                                }}
+                                iconName="RotateCcw"
+                                iconSize={16}
+                                className="h-8 w-8 hover:bg-green-100 hover:text-green-600"
+                                title="Restaurar empleado"
+                              />
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => {
+                                  e?.stopPropagation();
+                                  onDelete?.(employee);
+                                }}
+                                iconName="Trash2"
+                                iconSize={16}
+                                className="h-8 w-8 hover:bg-red-100 hover:text-red-600"
+                                title="Eliminar empleado"
+                              />
+                            )}
+                          </>
+                        )}
+                        
+                        {/* More Options Button */}
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={(e) => {
                             e?.stopPropagation();
-                            // Handle more actions
+                            // Handle more actions menu
                           }}
                           iconName="MoreHorizontal"
                           iconSize={16}
+                          className="h-8 w-8 hover:bg-gray-100 hover:text-gray-600"
+                          title="Más opciones"
                         />
                       </>
                     )}
@@ -289,7 +359,9 @@ const EmployeeTable = ({
           </tbody>
         </table>
       </div>
-      {employees?.length === 0 && (
+      
+      {/* Empty State */}
+      {!loading && employees?.length === 0 && (
         <div className="p-12 text-center">
           <Icon name="Users" size={48} className="mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">No se encontraron empleados</h3>
