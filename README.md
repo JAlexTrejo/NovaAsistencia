@@ -1,6 +1,6 @@
-# GY&ID CRM by Alejandro Trejo y Nova Axis
+# Nova HR - Sistema de Recursos Humanos
 
-GY&ID CRM es un sistema integral de gestión de recursos humanos y nómina, diseñado específicamente para empresas de construcción con múltiples sitios de trabajo. El sistema incluye control de asistencia, cálculos de nómina automatizados, gestión de empleados y reportes avanzados.
+Nova HR es un sistema integral de gestión de recursos humanos y nómina, diseñado específicamente para empresas de construcción con múltiples sitios de trabajo. El sistema incluye control de asistencia, cálculos de nómina automatizados, gestión de empleados y reportes avanzados.
 
 ## 🚀 Características Principales
 

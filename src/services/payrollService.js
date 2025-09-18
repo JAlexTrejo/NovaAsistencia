@@ -1,88 +1,113 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { adaptSupabaseError } from '@/utils/errors';
+
+const ok   = (data) => ({ ok: true, data });
+const fail = (e)    => ({ ok: false, ...adaptSupabaseError(e) });
 
 export const payrollService = {
-  // Calculate weekly payroll for an employee
+  // --------------------------------------------
+  // 1) Cálculo semanal (RPC)
+  // --------------------------------------------
   async calculateWeeklyPayroll(employeeId, startDate, endDate) {
     try {
-      const { data, error } = await supabase
-        ?.rpc('calculate_weekly_payroll', {
-          p_employee_id: employeeId,
-          p_start_date: startDate,
-          p_end_date: endDate
-        });
+      const { data, error } = await supabase.rpc('calculate_weekly_payroll', {
+        p_employee_id: employeeId,
+        p_start_date: startDate,
+        p_end_date: endDate,
+      });
 
-      if (error) throw error;
+      if (error) return fail(error);
 
-      const result = data?.[0] || {};
-      return {
-        employeeId: result?.empleado_id,
-        workedDays: result?.dias_trabajados || 0,
-        regularHours: parseFloat(result?.horas_regulares || 0),
-        overtimeHours: parseFloat(result?.horas_extra || 0),
-        basePay: parseFloat(result?.salario_base || 0),
-        overtimePay: parseFloat(result?.pago_horas_extra || 0),
-        grossPay: parseFloat(result?.salario_bruto || 0)
+      const r = (data && data[0]) || {};
+      const mapped = {
+        employeeId: r?.empleado_id ?? employeeId,
+        workedDays: Number(r?.dias_trabajados ?? 0),
+        regularHours: Number(r?.horas_regulares ?? 0),
+        overtimeHours: Number(r?.horas_extra ?? 0),
+        basePay: Number(r?.salario_base ?? 0),
+        overtimePay: Number(r?.pago_horas_extra ?? 0),
+        grossPay: Number(r?.salario_bruto ?? 0),
       };
-    } catch (error) {
-      if (error?.message?.includes('Failed to fetch')) {
-        throw new Error('No se puede conectar a la base de datos. Verifica tu conexión.');
-      }
-      throw new Error(`Error al calcular nómina: ${error?.message}`);
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get existing payroll record
+  // --------------------------------------------
+  // 2) Obtener registro de nómina (por empleado + semana)
+  // --------------------------------------------
   async getPayrollRecord(employeeId, startDate) {
     try {
       const { data, error } = await supabase
-        ?.from('nominas')
-        ?.select(`
-          *,
+        .from('nominas')
+        .select(`
+          id,
+          empleado_id,
+          semana_inicio,
+          semana_fin,
+          dias_trabajados,
+          horas_regulares,
+          horas_extra,
+          salario_base,
+          pago_horas_extra,
+          bonificaciones,
+          deducciones,
+          salario_bruto,
+          salario_neto,
+          procesada,
+          procesada_por,
+          procesada_en,
           empleados:empleado_id (
             codigo_empleado,
-            user_profiles:user_id (full_name)
+            user_profiles:user_id ( full_name )
           )
         `)
-        ?.eq('empleado_id', employeeId)
-        ?.eq('semana_inicio', startDate)
-        ?.single();
+        .eq('empleado_id', employeeId)
+        .eq('semana_inicio', startDate)
+        .single();
 
-      if (error && error?.code !== 'PGRST116') throw error;
+      // Si no existe (PGRST116), devolvemos ok con null
+      if (error) {
+        if (error.code === 'PGRST116') return ok(null);
+        return fail(error);
+      }
 
-      return data ? {
+      const mapped = {
         id: data?.id,
         employeeId: data?.empleado_id,
         weekStart: data?.semana_inicio,
         weekEnd: data?.semana_fin,
-        workedDays: data?.dias_trabajados,
-        regularHours: parseFloat(data?.horas_regulares || 0),
-        overtimeHours: parseFloat(data?.horas_extra || 0),
-        basePay: parseFloat(data?.salario_base || 0),
-        overtimePay: parseFloat(data?.pago_horas_extra || 0),
-        bonuses: parseFloat(data?.bonificaciones || 0),
-        deductions: parseFloat(data?.deducciones || 0),
-        grossPay: parseFloat(data?.salario_bruto || 0),
-        netPay: parseFloat(data?.salario_neto || 0),
-        processed: data?.procesada,
+        workedDays: Number(data?.dias_trabajados ?? 0),
+        regularHours: Number(data?.horas_regulares ?? 0),
+        overtimeHours: Number(data?.horas_extra ?? 0),
+        basePay: Number(data?.salario_base ?? 0),
+        overtimePay: Number(data?.pago_horas_extra ?? 0),
+        bonuses: Number(data?.bonificaciones ?? 0),
+        deductions: Number(data?.deducciones ?? 0),
+        grossPay: Number(data?.salario_bruto ?? 0),
+        netPay: Number(data?.salario_neto ?? 0),
+        processed: !!data?.procesada,
         processedBy: data?.procesada_por,
         processedAt: data?.procesada_en,
         employee: {
-          code: data?.empleados?.codigo_empleado,
-          name: data?.empleados?.user_profiles?.full_name
-        }
-      } : null;
-    } catch (error) {
-      if (error?.message?.includes('Failed to fetch')) {
-        throw new Error('No se puede conectar a la base de datos.');
-      }
-      throw new Error(`Error al obtener registro de nómina: ${error?.message}`);
+          code: data?.empleados?.codigo_empleado ?? null,
+          name: data?.empleados?.user_profiles?.full_name ?? null,
+        },
+      };
+
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Save/update payroll record
+  // --------------------------------------------
+  // 3) Guardar/actualizar nómina (upsert)
+  // --------------------------------------------
   async savePayrollRecord(payrollData) {
     try {
-      const record = {
+      const payload = {
         empleado_id: payrollData?.employeeId,
         semana_inicio: payrollData?.weekStart,
         semana_fin: payrollData?.weekEnd,
@@ -91,197 +116,230 @@ export const payrollService = {
         horas_extra: payrollData?.overtimeHours,
         salario_base: payrollData?.basePay,
         pago_horas_extra: payrollData?.overtimePay,
-        bonificaciones: payrollData?.bonuses || 0,
-        deducciones: payrollData?.deductions || 0,
+        bonificaciones: payrollData?.bonuses ?? 0,
+        deducciones: payrollData?.deductions ?? 0,
         salario_bruto: payrollData?.grossPay,
         salario_neto: payrollData?.netPay,
-        procesada: payrollData?.processed || false,
-        procesada_por: payrollData?.processedBy,
-        procesada_en: payrollData?.processedAt
+        procesada: payrollData?.processed ?? false,
+        procesada_por: payrollData?.processedBy ?? null,
+        procesada_en: payrollData?.processedAt ?? null,
       };
 
       const { data, error } = await supabase
-        ?.from('nominas')
-        ?.upsert(record, {
-          onConflict: 'empleado_id,semana_inicio'
-        })
-        ?.select()
-        ?.single();
+        .from('nominas')
+        .upsert(payload, { onConflict: 'empleado_id,semana_inicio' })
+        .select('id,empleado_id,semana_inicio,semana_fin,salario_bruto,salario_neto,procesada,procesada_por,procesada_en')
+        .single();
 
-      if (error) throw error;
+      if (error) return fail(error);
 
-      return {
+      const mapped = {
         id: data?.id,
         employeeId: data?.empleado_id,
         weekStart: data?.semana_inicio,
         weekEnd: data?.semana_fin,
-        grossPay: parseFloat(data?.salario_bruto || 0),
-        netPay: parseFloat(data?.salario_neto || 0),
-        processed: data?.procesada
+        grossPay: Number(data?.salario_bruto ?? 0),
+        netPay: Number(data?.salario_neto ?? 0),
+        processed: !!data?.procesada,
+        processedBy: data?.procesada_por ?? null,
+        processedAt: data?.procesada_en ?? null,
       };
-    } catch (error) {
-      throw new Error(`Error al guardar nómina: ${error?.message}`);
+
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get payroll adjustments for employee and date range
+  // --------------------------------------------
+  // 4) Ajustes de nómina (listar)
+  // --------------------------------------------
   async getPayrollAdjustments(employeeId, startDate, endDate) {
     try {
       const { data, error } = await supabase
-        ?.from('ajustes_nomina')
-        ?.select(`
-          *,
-          user_profiles:autorizado_por (full_name)
+        .from('ajustes_nomina')
+        .select(`
+          id,
+          empleado_id,
+          nomina_id,
+          tipo,
+          categoria,
+          monto,
+          descripcion,
+          autorizado_por,
+          created_at,
+          user_profiles:autorizado_por ( full_name )
         `)
-        ?.eq('empleado_id', employeeId)
-        ?.gte('created_at', startDate)
-        ?.lte('created_at', endDate + 'T23:59:59')
-        ?.order('created_at', { ascending: false });
+        .eq('empleado_id', employeeId)
+        .gte('created_at', startDate)
+        .lte('created_at', `${endDate}T23:59:59`)
+        .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) return fail(error);
 
-      return data?.map(adj => ({
+      const mapped = (data || []).map((adj) => ({
         id: adj?.id,
         type: adj?.tipo,
         category: adj?.categoria,
-        amount: parseFloat(adj?.monto),
+        amount: Number(adj?.monto ?? 0),
         description: adj?.descripcion,
         authorizedBy: adj?.user_profiles?.full_name || 'Desconocido',
-        createdAt: adj?.created_at
-      })) || [];
-    } catch (error) {
-      throw new Error(`Error al obtener ajustes: ${error?.message}`);
+        createdAt: adj?.created_at,
+        payrollId: adj?.nomina_id ?? null,
+      }));
+
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Add payroll adjustment
+  // --------------------------------------------
+  // 5) Agregar ajuste
+  // --------------------------------------------
   async addPayrollAdjustment(adjustmentData) {
     try {
+      const insert = {
+        empleado_id: adjustmentData?.employeeId,
+        nomina_id: adjustmentData?.payrollId ?? null,
+        tipo: adjustmentData?.type,
+        categoria: adjustmentData?.category,
+        monto: adjustmentData?.amount,
+        descripcion: adjustmentData?.description,
+        autorizado_por: adjustmentData?.authorizedBy,
+      };
+
       const { data, error } = await supabase
-        ?.from('ajustes_nomina')
-        ?.insert({
-          empleado_id: adjustmentData?.employeeId,
-          nomina_id: adjustmentData?.payrollId || null,
-          tipo: adjustmentData?.type,
-          categoria: adjustmentData?.category,
-          monto: adjustmentData?.amount,
-          descripcion: adjustmentData?.description,
-          autorizado_por: adjustmentData?.authorizedBy
-        })
-        ?.select()
-        ?.single();
+        .from('ajustes_nomina')
+        .insert(insert)
+        .select('id,tipo,categoria,monto,descripcion,nomina_id,empleado_id,autorizado_por,created_at')
+        .single();
 
-      if (error) throw error;
+      if (error) return fail(error);
 
-      return {
+      const mapped = {
         id: data?.id,
         type: data?.tipo,
         category: data?.categoria,
-        amount: parseFloat(data?.monto),
-        description: data?.descripcion
+        amount: Number(data?.monto ?? 0),
+        description: data?.descripcion,
+        payrollId: data?.nomina_id ?? null,
+        employeeId: data?.empleado_id ?? null,
+        authorizedBy: data?.autorizado_por ?? null,
+        createdAt: data?.created_at ?? null,
       };
-    } catch (error) {
-      throw new Error(`Error al agregar ajuste: ${error?.message}`);
+
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Process payroll (mark as processed)
+  // --------------------------------------------
+  // 6) Marcar nómina como procesada
+  // --------------------------------------------
   async processPayroll(payrollId, userId) {
     try {
       const { data, error } = await supabase
-        ?.from('nominas')
-        ?.update({
+        .from('nominas')
+        .update({
           procesada: true,
           procesada_por: userId,
-          procesada_en: new Date()?.toISOString()
+          procesada_en: new Date().toISOString(),
         })
-        ?.eq('id', payrollId)
-        ?.select()
-        ?.single();
+        .eq('id', payrollId)
+        .select('id,procesada,procesada_por,procesada_en')
+        .single();
 
-      if (error) throw error;
+      if (error) return fail(error);
 
-      return {
+      const mapped = {
         id: data?.id,
-        processed: data?.procesada,
-        processedBy: data?.procesada_por,
-        processedAt: data?.procesada_en
+        processed: !!data?.procesada,
+        processedBy: data?.procesada_por ?? null,
+        processedAt: data?.procesada_en ?? null,
       };
-    } catch (error) {
-      throw new Error(`Error al procesar nómina: ${error?.message}`);
+
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get payroll summary for all employees in date range
-  async getPayrollSummary(startDate, endDate) {
+  // --------------------------------------------
+  // 7) Resumen de nómina (por semana)
+  //    Si pasas endDate, filtramos por rango; si no, por semana_inicio == startDate
+  // --------------------------------------------
+  async getPayrollSummary(startDate, endDate = null) {
     try {
-      const { data, error } = await supabase
-        ?.from('nominas')
-        ?.select(`
-          *,
+      let query = supabase
+        .from('nominas')
+        .select(`
+          id,
+          empleado_id,
+          semana_inicio,
+          semana_fin,
+          dias_trabajados,
+          horas_regulares,
+          horas_extra,
+          salario_bruto,
+          salario_neto,
+          procesada,
           empleados:empleado_id (
             codigo_empleado,
-            user_profiles:user_id (full_name),
-            obras:obra_id (nombre)
+            user_profiles:user_id ( full_name ),
+            obras:obra_id ( nombre )
           )
         `)
-        ?.eq('semana_inicio', startDate)
-        ?.order('salario_bruto', { ascending: false });
+        .order('salario_bruto', { ascending: false });
 
-      if (error) throw error;
+      if (endDate) {
+        query = query.gte('semana_inicio', startDate).lte('semana_fin', endDate);
+      } else {
+        query = query.eq('semana_inicio', startDate);
+      }
 
-      return data?.map(record => ({
-        id: record?.id,
-        employeeId: record?.empleado_id,
-        employeeCode: record?.empleados?.codigo_empleado,
-        employeeName: record?.empleados?.user_profiles?.full_name,
-        site: record?.empleados?.obras?.nombre,
-        workedDays: record?.dias_trabajados,
-        regularHours: parseFloat(record?.horas_regulares || 0),
-        overtimeHours: parseFloat(record?.horas_extra || 0),
-        grossPay: parseFloat(record?.salario_bruto || 0),
-        netPay: parseFloat(record?.salario_neto || 0),
-        processed: record?.procesada
-      })) || [];
-    } catch (error) {
-      throw new Error(`Error al obtener resumen de nómina: ${error?.message}`);
+      const { data, error } = await query;
+      if (error) return fail(error);
+
+      const mapped = (data || []).map((r) => ({
+        id: r?.id,
+        employeeId: r?.empleado_id,
+        employeeCode: r?.empleados?.codigo_empleado ?? null,
+        employeeName: r?.empleados?.user_profiles?.full_name ?? null,
+        site: r?.empleados?.obras?.nombre ?? null,
+        workedDays: Number(r?.dias_trabajados ?? 0),
+        regularHours: Number(r?.horas_regulares ?? 0),
+        overtimeHours: Number(r?.horas_extra ?? 0),
+        grossPay: Number(r?.salario_bruto ?? 0),
+        netPay: Number(r?.salario_neto ?? 0),
+        processed: !!r?.procesada,
+        weekStart: r?.semana_inicio,
+        weekEnd: r?.semana_fin,
+      }));
+
+      return ok(mapped);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Delete payroll adjustment
+  // --------------------------------------------
+  // 8) Eliminar ajuste
+  // --------------------------------------------
   async deletePayrollAdjustment(adjustmentId) {
     try {
       const { error } = await supabase
-        ?.from('ajustes_nomina')
-        ?.delete()
-        ?.eq('id', adjustmentId);
+        .from('ajustes_nomina')
+        .delete()
+        .eq('id', adjustmentId);
 
-      if (error) throw error;
-
-      return true;
-    } catch (error) {
-      throw new Error(`Error al eliminar ajuste: ${error?.message}`);
+      if (error) return fail(error);
+      return ok(true);
+    } catch (e) {
+      return fail(e);
     }
-  }
+  },
 };
-function getCurrentWeekPayroll(...args) {
-  // eslint-disable-next-line no-console
-  console.warn('Placeholder: getCurrentWeekPayroll is not implemented yet.', args);
-  return null;
-}
 
-export { getCurrentWeekPayroll };
-function calculateWeeklyPayroll(...args) {
-  // eslint-disable-next-line no-console
-  console.warn('Placeholder: calculateWeeklyPayroll is not implemented yet.', args);
-  return null;
-}
-
-export { calculateWeeklyPayroll };
-function bulkCalculatePayroll(...args) {
-  // eslint-disable-next-line no-console
-  console.warn('Placeholder: bulkCalculatePayroll is not implemented yet.', args);
-  return null;
-}
-
-export { bulkCalculatePayroll };
+export default payrollService;

@@ -48,7 +48,7 @@ const EmployeeLoginPortal = () => {
   return (
     <>
       <Helmet>
-        <title>Portal de Empleados - AsistenciaPro</title>
+        <title>Portal de Empleados - GY&ID CRM - </title>
         <meta name="description" content="Portal de acceso seguro para empleados de construcción. Inicie sesión para acceder a su dashboard de asistencia y gestión de tiempo." />
         <meta name="keywords" content="login, empleados, construcción, asistencia, portal, seguridad" />
       </Helmet>

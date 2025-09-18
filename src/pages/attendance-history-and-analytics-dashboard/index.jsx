@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
 import NavigationBreadcrumb from '../../components/ui/NavigationBreadcrumb';
 import UserContextHeader from '../../components/ui/UserContextHeader';
@@ -7,173 +8,177 @@ import NotificationCenter from '../../components/ui/NotificationCenter';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
 
-// Import page components
 import KPICard from './components/KPICard';
 import FilterPanel from './components/FilterPanel';
 import AttendanceGrid from './components/AttendanceGrid';
 import AttendanceChart from './components/AttendanceChart';
 import ExportPanel from './components/ExportPanel';
 
+import { useQuery } from '@/hooks/useQuery';
+import { listAttendance } from '@/services/attendanceListService';
+import Loading from '@/components/ui/Loading';
+import ErrorState from '@/components/ui/ErrorState';
+import { showToast } from '@/components/ui/ToastHub';
+import { fmtNumber } from '@/utils/numberFormat';
+
 const AttendanceHistoryAndAnalyticsDashboard = () => {
   const navigate = useNavigate();
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [filterPanelCollapsed, setFilterPanelCollapsed] = useState(false);
   const [chartType, setChartType] = useState('bar');
+
+  // selección en grid
   const [selectedRecords, setSelectedRecords] = useState([]);
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [isExporting, setIsExporting] = useState(false);
 
-  // Mock user data
+  // Usuario (sustituir por useAuth si lo tienes)
   const currentUser = {
     name: 'Ana Rodríguez',
     role: 'Supervisor',
     site: 'Obra Central',
-    avatar: null
+    avatar: null,
   };
 
-  // Mock filters state
+  // Filtros del panel
   const [filters, setFilters] = useState({
-    dateFrom: '2025-01-01',
-    dateTo: '2025-01-04',
+    dateFrom: '',
+    dateTo: '',
     site: 'all',
     supervisor: 'all',
     status: 'all',
     employee: '',
     includeIncidents: false,
     includeOvertime: true,
-    savedView: ''
+    savedView: '',
   });
 
-  // Mock attendance data
-  const attendanceData = [
-    {
-      id: 1,
-      employee: 'Carlos Martínez',
-      site: 'Obra Central',
-      date: '2025-01-04',
-      clockIn: '08:00',
-      lunchStart: '12:00',
-      lunchEnd: '13:00',
-      clockOut: '17:30',
-      totalHours: 8.5,
-      overtime: 0.5,
-      status: 'complete',
-      incidents: []
-    },
-    {
-      id: 2,
-      employee: 'María González',
-      site: 'Proyecto Norte',
-      date: '2025-01-04',
-      clockIn: '08:15',
-      lunchStart: '12:30',
-      lunchEnd: '13:30',
-      clockOut: '18:00',
-      totalHours: 8.75,
-      overtime: 0.75,
-      status: 'late',
-      incidents: [{ type: 'tardiness', reason: 'Tráfico' }]
-    },
-    {
-      id: 3,
-      employee: 'Luis García',
-      site: 'Edificio Sur',
-      date: '2025-01-04',
-      clockIn: '07:45',
-      lunchStart: '12:00',
-      lunchEnd: '13:00',
-      clockOut: null,
-      totalHours: 0,
-      overtime: 0,
-      status: 'incomplete',
-      incidents: [{ type: 'incomplete', reason: 'No registró salida' }]
-    },
-    {
-      id: 4,
-      employee: 'Pedro Ruiz',
-      site: 'Obra Central',
-      date: '2025-01-04',
-      clockIn: '08:00',
-      lunchStart: '12:00',
-      lunchEnd: '13:00',
-      clockOut: '19:30',
-      totalHours: 10.5,
-      overtime: 2.5,
-      status: 'overtime',
-      incidents: []
-    },
-    {
-      id: 5,
-      employee: 'Ana López',
-      site: 'Complejo Oeste',
-      date: '2025-01-04',
-      clockIn: '08:05',
-      lunchStart: '12:15',
-      lunchEnd: '13:15',
-      clockOut: '17:00',
-      totalHours: 7.75,
-      overtime: 0,
-      status: 'complete',
-      incidents: []
-    }
-  ];
+  // Paginación real
+  const [page, setPage] = useState(0);
 
-  // KPI data
-  const kpiData = [
-    {
-      title: 'Asistencia General',
-      value: '94.2',
-      unit: '%',
-      trend: 'up',
-      trendValue: '+2.1%',
-      icon: 'Users',
-      color: 'success',
-      description: 'vs. mes anterior'
-    },
-    {
-      title: 'Tardanzas',
-      value: '6.8',
-      unit: '%',
-      trend: 'down',
-      trendValue: '-1.2%',
-      icon: 'Clock',
-      color: 'warning',
-      description: 'Reducción significativa'
-    },
-    {
-      title: 'Horas Extra',
-      value: '142.5',
-      unit: 'hrs',
-      trend: 'up',
-      trendValue: '+8.3%',
-      icon: 'Zap',
-      color: 'primary',
-      description: 'Esta semana'
-    },
-    {
-      title: 'Días Incompletos',
-      value: '12',
-      unit: '',
-      trend: 'down',
-      trendValue: '-3',
-      icon: 'AlertTriangle',
-      color: 'error',
-      description: 'Pendientes de validación'
-    }
-  ];
+  // Mapeo de filtros → parámetros del servicio
+  const queryParams = useMemo(() => {
+    const isUUID = /^[0-9a-f-]{36}$/i.test(filters.employee || '');
+    return {
+      page,
+      startDate: filters.dateFrom || undefined,
+      endDate: filters.dateTo || undefined,
+      siteId: filters.site !== 'all' ? filters.site : undefined,
+      employeeId: isUUID ? filters.employee : undefined,
+      search: !isUUID && filters.employee ? filters.employee : undefined,
+      status: filters.status && filters.status !== 'all' ? filters.status : undefined,
+    };
+  }, [page, filters]);
 
-  // Event handlers
-  const handleFiltersChange = (newFilters) => {
-    setFilters(newFilters);
-  };
+  // Datos desde Supabase
+  const {
+    data,
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useQuery(listAttendance, {
+    params: queryParams,
+    deps: [JSON.stringify(queryParams)], // dispara al cambiar filtros/página
+    keepPreviousData: true,
+    retry: 1,
+    onError: (e) =>
+      showToast({
+        title: 'Error al cargar asistencias',
+        message: e.message,
+        type: 'error',
+      }),
+  });
 
-  const handleApplyFilters = (appliedFilters) => {
-    console.log('Applying filters:', appliedFilters);
-    // Here you would typically fetch new data based on filters
-  };
+  const rows = data?.rows ?? [];
+  const count = data?.count ?? 0;
+  const pageSize = data?.pageSize ?? 50;
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(count / pageSize)),
+    [count, pageSize]
+  );
 
-  const handleResetFilters = () => {
-    const resetFilters = {
+  // Al cambiar filtros (no página), volvemos a la página 0
+  useEffect(() => {
+    setPage(0);
+  }, [
+    filters.dateFrom,
+    filters.dateTo,
+    filters.site,
+    filters.employee,
+    filters.status,
+    filters.includeIncidents,
+    filters.includeOvertime,
+    filters.savedView,
+  ]);
+
+  // KPI con datos REALES
+  const kpiData = useMemo(() => {
+    const total = rows.length;
+    const completed = rows.filter(
+      (r) => r.status === 'complete' || r.status === 'overtime' || r.status === 'late'
+    ).length;
+    const attendanceRate = total ? (completed / total) * 100 : 0;
+
+    const tardies = rows.filter((r) => r.status === 'late').length;
+    const tardinessPct = total ? (tardies / total) * 100 : 0;
+
+    const overtimeHours = rows.reduce(
+      (sum, r) => sum + (Number(r.overtime_hours) || 0),
+      0
+    );
+    const incompleteDays = rows.filter((r) => r.status === 'incomplete').length;
+
+    return [
+      {
+        title: 'Asistencia General',
+        value: attendanceRate.toFixed(1),
+        unit: '%',
+        trend: 'up',
+        trendValue: '+0.0%',
+        icon: 'Users',
+        color: 'success',
+        description: 'Periodo visible',
+      },
+      {
+        title: 'Tardanzas',
+        value: tardinessPct.toFixed(1),
+        unit: '%',
+        trend: 'neutral',
+        trendValue: '—',
+        icon: 'Clock',
+        color: 'warning',
+        description: 'Sobre el total mostrado',
+      },
+      {
+        title: 'Horas Extra',
+        value: fmtNumber(overtimeHours),
+        unit: 'hrs',
+        trend: 'neutral',
+        trendValue: '—',
+        icon: 'Zap',
+        color: 'primary',
+        description: 'Acumulado periodo',
+      },
+      {
+        title: 'Días Incompletos',
+        value: String(incompleteDays),
+        unit: '',
+        trend: 'neutral',
+        trendValue: '—',
+        icon: 'AlertTriangle',
+        color: 'error',
+        description: 'Registros sin salida',
+      },
+    ];
+  }, [rows]);
+
+  // Handlers de filtros
+  const handleFiltersChange = (newFilters) => setFilters(newFilters);
+  const handleApplyFilters = (appliedFilters) => setFilters(appliedFilters);
+  const handleResetFilters = () =>
+    setFilters({
       dateFrom: '',
       dateTo: '',
       site: 'all',
@@ -182,79 +187,110 @@ const AttendanceHistoryAndAnalyticsDashboard = () => {
       employee: '',
       includeIncidents: false,
       includeOvertime: true,
-      savedView: ''
-    };
-    setFilters(resetFilters);
-  };
+      savedView: '',
+    });
 
-  const handleSort = (key) => {
-    setSortConfig(prevConfig => ({
+  // Orden local (si la grilla no lo maneja internamente)
+  const handleSort = (key) =>
+    setSortConfig((prev) => ({
       key,
-      direction: prevConfig?.key === key && prevConfig?.direction === 'asc' ? 'desc' : 'asc'
+      direction: prev?.key === key && prev?.direction === 'asc' ? 'desc' : 'asc',
     }));
-  };
 
   const handleBulkAction = (action) => {
-    console.log(`Bulk action: ${action} on records:`, selectedRecords);
-    // Implement bulk actions logic
+    // Extiende si necesitas (exportar seleccionados, etc.)
+    // console.log(`Bulk action: ${action} on`, selectedRecords);
   };
 
   const handleRecordEdit = (record) => {
-    console.log('Editing record:', record);
-    // Navigate to edit form or open modal
+    // Redirigir o abrir modal
+    // console.log('Editing record:', record);
   };
 
-  const handleExport = async (exportConfig) => {
+  const handleExport = async () => {
     setIsExporting(true);
-    console.log('Exporting with config:', exportConfig);
-    
-    // Simulate export process
-    setTimeout(() => {
+    try {
+      // Implementa CSV/XLSX según tu preferencia
+      showToast({
+        title: 'Exportación iniciada',
+        message: 'Tu archivo se generará en segundo plano.',
+        type: 'success',
+      });
+    } catch (e) {
+      showToast({ title: 'Error al exportar', message: e.message, type: 'error' });
+    } finally {
       setIsExporting(false);
-      // Show success notification
-    }, 2000);
+    }
   };
 
-  const handleLogout = () => {
-    navigate('/employee-login-portal');
-  };
-
+  const handleLogout = () => navigate('/employee-login-portal');
   const handleSiteChange = (site) => {
-    console.log('Site changed to:', site);
+    if (site?.id) setFilters((f) => ({ ...f, site: site.id }));
   };
 
-  // Keyboard shortcuts
+  // Atajos de teclado
   useEffect(() => {
-    const handleKeyPress = (e) => {
+    const onKey = (e) => {
       if (e?.ctrlKey || e?.metaKey) {
-        switch (e?.key) {
-          case 'f':
-            e?.preventDefault();
-            setFilterPanelCollapsed(!filterPanelCollapsed);
-            break;
-          case 'e':
-            e?.preventDefault();
-            handleExport({ format: 'excel', dateRange: 'current' });
-            break;
-          default:
-            break;
+        if (e.key === 'f') {
+          e.preventDefault();
+          setFilterPanelCollapsed((v) => !v);
+        } else if (e.key === 'e') {
+          e.preventDefault();
+          handleExport();
         }
       }
     };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [filterPanelCollapsed]);
+  // Adaptación de filas a la UI
+  const attendanceData = useMemo(
+    () =>
+      rows.map((r) => ({
+        id: r.id,
+        // OJO: el nombre viene anidado en employee_profiles → user_profiles
+        employee:
+          r.employee_profiles?.user_profiles?.full_name ||
+          r.employee_profiles?.full_name ||
+          r.employee_id,
+        site: r.construction_sites?.name || r.site_id || '—',
+        date: r.date,
+        clockIn: r.clock_in
+          ? new Date(r.clock_in).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+          : null,
+        lunchStart: r.lunch_start
+          ? new Date(r.lunch_start).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+          : null,
+        lunchEnd: r.lunch_end
+          ? new Date(r.lunch_end).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+          : null,
+        clockOut: r.clock_out
+          ? new Date(r.clock_out).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+          : null,
+        totalHours: Number(r.total_hours || 0),
+        overtime: Number(r.overtime_hours || 0),
+        status: r.status || '—',
+        incidents: [],
+        _raw: r,
+      })),
+    [rows]
+  );
 
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar */}
-      <RoleBasedSidebar 
+      <RoleBasedSidebar
         isCollapsed={sidebarCollapsed}
         userRole={currentUser?.role?.toLowerCase()}
       />
+
       {/* Main Content */}
-      <div className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-60'} pb-16 md:pb-0`}>
+      <div
+        className={`transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-60'} pb-16 md:pb-0`}
+      >
         {/* Header */}
         <header className="bg-card border-b border-border px-6 py-4">
           <div className="flex items-center justify-between">
@@ -267,9 +303,11 @@ const AttendanceHistoryAndAnalyticsDashboard = () => {
               >
                 <Icon name={sidebarCollapsed ? 'ChevronRight' : 'ChevronLeft'} size={20} />
               </Button>
-              
+
               <div>
-                <h1 className="text-xl font-semibold text-foreground">Historial y Análisis de Asistencia</h1>
+                <h1 className="text-xl font-semibold text-foreground">
+                  Historial y Análisis de Asistencia
+                </h1>
                 <p className="text-sm text-muted-foreground">
                   Análisis detallado y tendencias de asistencia laboral
                 </p>
@@ -293,17 +331,17 @@ const AttendanceHistoryAndAnalyticsDashboard = () => {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {kpiData?.map((kpi, index) => (
+            {kpiData.map((kpi, index) => (
               <KPICard
                 key={index}
-                title={kpi?.title}
-                value={kpi?.value}
-                unit={kpi?.unit}
-                trend={kpi?.trend}
-                trendValue={kpi?.trendValue}
-                icon={kpi?.icon}
-                color={kpi?.color}
-                description={kpi?.description}
+                title={kpi.title}
+                value={kpi.value}
+                unit={kpi.unit}
+                trend={kpi.trend}
+                trendValue={kpi.trendValue}
+                icon={kpi.icon}
+                color={kpi.color}
+                description={kpi.description}
               />
             ))}
           </div>
@@ -322,31 +360,63 @@ const AttendanceHistoryAndAnalyticsDashboard = () => {
 
             {/* Analytics Area */}
             <div className="flex-1 space-y-6">
-              {/* Charts Section */}
-              <AttendanceChart
-                data={attendanceData}
-                chartType={chartType}
-                onChartTypeChange={setChartType}
-              />
+              {isLoading ? (
+                <Loading label="Cargando asistencias…" />
+              ) : error ? (
+                <ErrorState message={error.message} onRetry={refetch} />
+              ) : (
+                <>
+                  {/* Charts */}
+                  <AttendanceChart
+                    data={attendanceData}
+                    chartType={chartType}
+                    onChartTypeChange={setChartType}
+                  />
 
-              {/* Data Grid */}
-              <AttendanceGrid
-                data={attendanceData}
-                onSort={handleSort}
-                sortConfig={sortConfig}
-                onBulkAction={handleBulkAction}
-                selectedRecords={selectedRecords}
-                onRecordSelect={setSelectedRecords}
-                onRecordEdit={handleRecordEdit}
-              />
+                  {/* Data Grid */}
+                  <AttendanceGrid
+                    data={attendanceData}
+                    onSort={handleSort}
+                    sortConfig={sortConfig}
+                    onBulkAction={handleBulkAction}
+                    selectedRecords={selectedRecords}
+                    onRecordSelect={setSelectedRecords}
+                    onRecordEdit={handleRecordEdit}
+                    isFetching={isFetching}
+                  />
+
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-slate-500">
+                      {isFetching ? 'Actualizando… ' : ''}
+                      Total: {count} · Página {page + 1} de {totalPages}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="px-3 py-1.5 rounded border disabled:opacity-50"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        onClick={() =>
+                          setPage((p) => (p + 1 < totalPages ? p + 1 : p))
+                        }
+                        disabled={page + 1 >= totalPages}
+                        className="px-3 py-1.5 rounded border disabled:opacity-50"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Export Panel - Desktop Only */}
             <div className="hidden xl:block w-80">
-              <ExportPanel
-                onExport={handleExport}
-                isExporting={isExporting}
-              />
+              <ExportPanel onExport={handleExport} isExporting={isExporting} />
             </div>
           </div>
 
@@ -357,7 +427,7 @@ const AttendanceHistoryAndAnalyticsDashboard = () => {
               fullWidth
               iconName="Download"
               iconPosition="left"
-              onClick={() => handleExport({ format: 'excel', dateRange: 'current' })}
+              onClick={handleExport}
               loading={isExporting}
             >
               Exportar Datos
@@ -368,8 +438,12 @@ const AttendanceHistoryAndAnalyticsDashboard = () => {
           <div className="hidden md:block fixed bottom-4 right-4">
             <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
               <div className="text-xs text-muted-foreground space-y-1">
-                <div><kbd className="px-1 py-0.5 bg-muted rounded text-xs">Ctrl+F</kbd> Filtros</div>
-                <div><kbd className="px-1 py-0.5 bg-muted rounded text-xs">Ctrl+E</kbd> Exportar</div>
+                <div>
+                  <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Ctrl+F</kbd> Filtros
+                </div>
+                <div>
+                  <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Ctrl+E</kbd> Exportar
+                </div>
               </div>
             </div>
           </div>

@@ -72,311 +72,81 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      setProfileLoading(true)
-      
       // Check cache first if requested
       if (useCache) {
         const cachedSession = loadSessionFromStorage()
         if (cachedSession?.userProfile?.id === userId) {
-          setUserProfile(cachedSession.userProfile)
-          setEmployeeProfile(cachedSession.employeeProfile || null)
-          setProfileLoading(false)
-          return cachedSession.userProfile
+          setUserProfile(cachedSession?.userProfile)
+          setEmployeeProfile(cachedSession?.employeeProfile || null)
+          return cachedSession?.userProfile;
         }
       }
 
-      // Fetch fresh profile data
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      // Fetch fresh user profile data
+      const { data: profileData, error: profileError } = await supabase
+        ?.from('user_profiles')
+        ?.select('*')
+        ?.eq('id', userId)
+        ?.single()
+
+      if (profileError && profileError?.code === 'PGRST116') {
+        // User profile not found - create it
+        return await createUserProfile(userId)
+      }
 
       if (profileError) {
         console.error('Profile fetch error:', profileError)
-        setAuthError(`Failed to load user profile: ${profileError.message}`)
+        setAuthError(`Failed to load user profile: ${profileError?.message}`)
         return null
       }
 
-      if (profile) {
-        setUserProfile(profile)
-        
-        // Try to fetch employee profile if user has one
-        if (profile.role !== 'superadmin' && profile.role !== 'admin') {
-          try {
-            const { data: employeeData, error: empError } = await supabase
-              .from('employee_profiles')
-              .select(`
-                *,
-                construction_site:construction_sites!site_id(id, name, address, manager_name, phone),
-                supervisor:user_profiles!supervisor_id(id, full_name, email, phone)
-              `)
-              .eq('user_id', userId)
-              .eq('status', 'active')
-              .single()
+      setUserProfile(profileData)
 
-            if (!empError && employeeData) {
-              setEmployeeProfile(employeeData)
-              saveSessionToStorage(user, profile, employeeData)
-            } else {
-              setEmployeeProfile(null)
-              saveSessionToStorage(user, profile, null)
-            }
-          } catch (empErr) {
-            console.error('Employee profile fetch error:', empErr)
-            setEmployeeProfile(null)
-            saveSessionToStorage(user, profile, null)
+      // Try to fetch employee profile if user has one
+      if (profileData?.role !== 'superadmin' && profileData?.role !== 'admin') {
+        try {
+          const { data: employeeData, error: empError } = await supabase
+            ?.from('employee_profiles')
+            ?.select(`
+              *,
+              construction_site:construction_sites!site_id(
+                id, name, address, manager_name, phone
+              ),
+              supervisor:user_profiles!supervisor_id(
+                id, full_name, email, phone
+              )
+            `)
+            ?.eq('user_id', userId)
+            ?.eq('status', 'active')
+            ?.single()
+
+          if (!empError && employeeData) {
+            setEmployeeProfile(employeeData)
+            saveSessionToStorage(user, profileData, employeeData)
+          } else {
+            saveSessionToStorage(user, profileData, null)
           }
-        } else {
-          setEmployeeProfile(null)
-          saveSessionToStorage(user, profile, null)
+        } catch (empErr) {
+          console.error('Employee profile fetch error:', empErr)
+          saveSessionToStorage(user, profileData, null)
         }
-        
-        return profile
+      } else {
+        // Admin/superadmin - no employee profile needed
+        saveSessionToStorage(user, profileData, null)
       }
-      
+
+      return profileData
+
     } catch (error) {
-      console.error('fetchUserProfile error:', error)
-      setAuthError(`Failed to load user profile: ${error.message}`)
+      console.error('Error in fetchUserProfile:', error)
+      if (error?.message?.includes('Failed to fetch')) {
+        setAuthError('Cannot connect to database. Please check your connection.')
+      } else {
+        setAuthError('Failed to load user profile')
+      }
       return null
-    } finally {
-      setProfileLoading(false)
     }
-  }, [loadSessionFromStorage, saveSessionToStorage, user])
-
-  // Initialize auth state
-  useEffect(() => {
-    let isMounted = true
-    
-    const initializeSession = async () => {
-      try {
-        // Load from cache first
-        const cachedSession = loadSessionFromStorage()
-        if (cachedSession?.user) {
-          setUser(cachedSession.user)
-          setUserProfile(cachedSession.userProfile)
-          setEmployeeProfile(cachedSession.employeeProfile || null)
-          setLoading(false)
-          return
-        }
-
-        // Get fresh session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        
-        if (sessionError) {
-          throw sessionError
-        }
-
-        if (session?.user && isMounted) {
-          setUser(session.user)
-          // Fetch profile after setting user
-          await fetchUserProfile(session.user.id, false)
-        }
-        
-      } catch (error) {
-        console.error('Session initialization error:', error)
-        if (error?.message?.includes('Failed to fetch') || 
-            error?.message?.includes('AuthRetryableFetchError') ||
-            error?.message?.includes('NetworkError')) {
-          setAuthError('Cannot connect to authentication service. Your Supabase project may be paused, deleted, or experiencing connectivity issues. Please check your internet connection and try refreshing the page.')
-        } else if (error?.message?.includes('Invalid API key') || 
-                   error?.message?.includes('Project not found')) {
-          setAuthError('Database configuration error. Please check your environment settings and contact your system administrator.')
-        } else {
-          setAuthError('Failed to load session. Please refresh the page.')
-        }
-      } finally {
-        if (isMounted) setLoading(false)
-      }
-    }
-
-    // Listen for auth state changes with enhanced error handling
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (!isMounted) return
-
-        console.log('Auth state change:', { event, userId: session?.user?.id })
-
-        setUser(session?.user ?? null)
-        setLoading(false)
-        
-        if (session?.user) {
-          setAuthError('')
-          fetchUserProfile(session.user.id, false)
-        } else {
-          setUserProfile(null)
-          setEmployeeProfile(null)
-          clearSessionFromStorage()
-        }
-      }
-    )
-
-    initializeSession()
-
-    return () => {
-      isMounted = false
-      subscription?.unsubscribe()
-    }
-  }, [fetchUserProfile, loadSessionFromStorage, clearSessionFromStorage])
-
-  // Enhanced profile operations with better error handling and circuit breaker integration
-  const profileOperations = {
-    async load(userId) {
-      if (!userId) return;
-      
-      // Prevent multiple simultaneous profile fetches for the same user
-      if (profileOperations?._loading === userId) {
-        console.log('Profile fetch already in progress for user:', userId);
-        return;
-      }
-      
-      profileOperations._loading = userId;
-      setProfileLoading(true);
-      
-      try {
-        const { authService } = await import('../services/authService');
-        
-        // Test connection first if we've had recent errors
-        if (authError) {
-          const connectionTest = await authService?.testConnection();
-          if (!connectionTest?.success) {
-            setAuthError(connectionTest?.error);
-            return;
-          }
-        }
-        
-        // Use authService with circuit breaker instead of direct Supabase calls
-        const profileData = await authService?.getUserProfile(userId);
-        
-        if (profileData) {
-          setUserProfile(profileData);
-          setAuthError(''); // Clear any previous errors
-          
-          // Try to fetch employee profile if user has one
-          if (profileData?.role !== 'superadmin' && profileData?.role !== 'admin') {
-            try {
-              // Use retry mechanism for employee profile fetch too
-              await authService?.retryWithBackoff(async () => {
-                const { data: employeeData, error: empError } = await supabase
-                  ?.from('employee_profiles')?.select(`*,construction_site:construction_sites!site_id(id, name, address, manager_name, phone),supervisor:user_profiles!supervisor_id(id, full_name, email, phone)`)?.eq('user_id', userId)?.eq('status', 'active')
-                  ?.single();
-
-                if (!empError && employeeData) {
-                  setEmployeeProfile(employeeData);
-                  saveSessionToStorage(user, profileData, employeeData);
-                } else {
-                  setEmployeeProfile(null);
-                  saveSessionToStorage(user, profileData, null);
-                }
-              }, 2, 500); // 2 retries, 500ms base delay
-            } catch (empErr) {
-              console.error('Employee profile fetch error:', empErr);
-              setEmployeeProfile(null);
-              saveSessionToStorage(user, profileData, null);
-            }
-          } else {
-            // Admin/superadmin - no employee profile needed
-            setEmployeeProfile(null);
-            saveSessionToStorage(user, profileData, null);
-          }
-        } else {
-          // Profile doesn't exist, try to create it
-          await profileOperations?.createProfile(userId);
-        }
-        
-      } catch (error) {
-        console.error('Profile fetch error:', {
-          userId,
-          message: error?.message,
-          stack: error?.stack,
-          timestamp: new Date().toISOString()
-        });
-        
-        // Enhanced error message based on error type
-        if (error?.message?.includes('Circuit breaker is OPEN')) {
-          setAuthError('Profile service temporarily unavailable. Please wait 30 seconds and refresh the page.');
-        } else if (error?.message?.includes('Cannot connect to database') || 
-                   error?.message?.includes('Failed to fetch') ||
-                   error?.message?.includes('NetworkError')) {
-          setAuthError('Cannot connect to database. Your Supabase project may be paused or deleted. Please check your Supabase dashboard and refresh the page.');
-        } else if (error?.message?.includes('Invalid API key') || 
-                   error?.message?.includes('Project not found')) {
-          setAuthError('Database configuration error. Please contact your system administrator.');
-        } else {
-          setAuthError(error?.message || 'Failed to load user profile. Please refresh the page.');
-        }
-      } finally {
-        profileOperations._loading = null;
-        setProfileLoading(false);
-      }
-    },
-
-    async createProfile(userId) {
-      try {
-        const { data: authUser } = await supabase?.auth?.getUser();
-        
-        if (!authUser?.user) {
-          throw new Error('User authentication data not available');
-        }
-
-        const { authService } = await import('../services/authService');
-        
-        const profileData = await authService?.createUserProfile({
-          id: userId,
-          email: authUser?.user?.email,
-          full_name: authUser?.user?.user_metadata?.full_name || authUser?.user?.email?.split('@')?.[0],
-          phone: authUser?.user?.user_metadata?.phone || null,
-          role: 'user'
-        });
-
-        if (profileData) {
-          setUserProfile(profileData);
-          saveSessionToStorage(user, profileData, null);
-          setAuthError(''); // Clear any previous errors
-          
-          // Log activity
-          await logActivity('profile_creation', 'Authentication', 'User profile created automatically');
-        }
-        
-      } catch (error) {
-        console.error('Error creating user profile:', error);
-        setAuthError(`Failed to create user profile: ${error?.message}`);
-      }
-    },
-    
-    clear() {
-      setUserProfile(null);
-      setEmployeeProfile(null);
-      setProfileLoading(false);
-    }
-  };
-
-  // Enhanced auth state handlers with debounce
-  const authStateHandlers = {
-    // CRITICAL: This MUST remain synchronous but with debounce
-    onChange: (() => {
-      let debounceTimer = null;
-      
-      return (event, session) => {
-        setUser(session?.user ?? null);
-        setLoading(false);
-        
-        // Clear any existing timer
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
-        
-        // Debounce profile loading to prevent multiple rapid calls
-        debounceTimer = setTimeout(() => {
-          if (session?.user) {
-            profileOperations?.load(session?.user?.id);
-          } else {
-            profileOperations?.clear();
-          }
-        }, 100); // 100ms debounce
-      };
-    })()
-  };
+  }, [user, saveSessionToStorage, loadSessionFromStorage])
 
   // Create user profile for new users
   const createUserProfile = async (userId) => {
@@ -426,6 +196,89 @@ export const AuthProvider = ({ children }) => {
       return null
     }
   }
+
+  // Initialize session on app load
+  useEffect(() => {
+    let isMounted = true
+
+    const initializeSession = async () => {
+      try {
+        // First check localStorage cache
+        const cachedSession = loadSessionFromStorage()
+        if (cachedSession && isMounted) {
+          setUser(cachedSession?.user)
+          setUserProfile(cachedSession?.userProfile)
+          setEmployeeProfile(cachedSession?.employeeProfile || null)
+          
+          // Verify session is still valid with Supabase
+          const { data: { session } } = await supabase?.auth?.getSession()
+          if (session?.user) {
+            // Session is valid, refresh profile data in background
+            fetchUserProfile(session?.user?.id, false)
+          } else {
+            // Session expired, clear cache
+            clearSessionFromStorage()
+            setUser(null)
+            setUserProfile(null)
+            setEmployeeProfile(null)
+          }
+          
+          if (isMounted) setLoading(false)
+          return
+        }
+
+        // No cache, get fresh session
+        const { data: { session }, error: sessionError } = await supabase?.auth?.getSession()
+        
+        if (sessionError) {
+          throw sessionError
+        }
+
+        if (session?.user && isMounted) {
+          setUser(session?.user)
+          await fetchUserProfile(session?.user?.id, false)
+        }
+
+      } catch (error) {
+        console.error('Session initialization error:', error)
+        if (error?.message?.includes('Failed to fetch') || 
+            error?.message?.includes('AuthRetryableFetchError')) {
+          setAuthError('Cannot connect to authentication service. Your Supabase project may be paused.')
+        } else {
+          setAuthError('Failed to load session')
+        }
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase?.auth?.onAuthStateChange(
+      (event, session) => {
+        if (!isMounted) return
+
+        if (session?.user) {
+          setUser(session?.user)
+          // Fire and forget - don't await
+          fetchUserProfile(session?.user?.id, false)
+        } else {
+          setUser(null)
+          setUserProfile(null)
+          setEmployeeProfile(null)
+          clearSessionFromStorage()
+        }
+        setLoading(false)
+        setAuthError('')
+      }
+    )
+
+    initializeSession()
+
+    return () => {
+      isMounted = false
+      subscription?.unsubscribe()
+    }
+  }, [fetchUserProfile, loadSessionFromStorage, clearSessionFromStorage])
 
   const logActivity = async (action, module, description, userId = null) => {
     try {
@@ -707,6 +560,143 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (error) {
       return { success: false, error: error?.message };
+    }
+  };
+
+  const profileOperations = {
+    async load(userId) {
+      if (!userId) return;
+      
+      // Prevent multiple simultaneous profile fetches for the same user
+      if (profileOperations?._loading === userId) {
+        console.log('Profile fetch already in progress for user:', userId);
+        return;
+      }
+      
+      profileOperations._loading = userId;
+      setProfileLoading(true);
+      
+      try {
+        const { authService } = await import('../services/authService');
+        
+        // Test connection first if we've had recent errors
+        if (authError) {
+          const connectionTest = await authService?.testConnection();
+          if (!connectionTest?.success) {
+            setAuthError(connectionTest?.error);
+            return;
+          }
+        }
+        
+        // Fetch user profile with enhanced error handling
+        const profileData = await authService?.getUserProfile(userId);
+        
+        if (profileData) {
+          setUserProfile(profileData);
+          setAuthError(''); // Clear any previous errors
+          
+          // Try to fetch employee profile if user has one
+          if (profileData?.role !== 'superadmin' && profileData?.role !== 'admin') {
+            try {
+              const { data: employeeData, error: empError } = await supabase
+                ?.from('employee_profiles')?.select(`*,construction_site:construction_sites!site_id(id, name, address, manager_name, phone),supervisor:user_profiles!supervisor_id(id, full_name, email, phone)`)?.eq('user_id', userId)?.eq('status', 'active')
+                ?.single();
+
+              if (!empError && employeeData) {
+                setEmployeeProfile(employeeData);
+                saveSessionToStorage(user, profileData, employeeData);
+              } else {
+                setEmployeeProfile(null);
+                saveSessionToStorage(user, profileData, null);
+              }
+            } catch (empErr) {
+              console.error('Employee profile fetch error:', empErr);
+              setEmployeeProfile(null);
+              saveSessionToStorage(user, profileData, null);
+            }
+          } else {
+            // Admin/superadmin - no employee profile needed
+            setEmployeeProfile(null);
+            saveSessionToStorage(user, profileData, null);
+          }
+        } else {
+          // Profile doesn't exist, try to create it
+          await profileOperations?.createProfile(userId);
+        }
+        
+      } catch (error) {
+        console.error('Profile fetch error:', {
+          userId,
+          message: error?.message,
+          stack: error?.stack
+        });
+        
+        // Enhanced error message based on error type
+        if (error?.message?.includes('Circuit breaker is OPEN')) {
+          setAuthError('Profile service temporarily unavailable. Please wait a moment and try again.');
+        } else if (error?.message?.includes('Cannot connect to database')) {
+          setAuthError('Cannot connect to database. Your Supabase project may be paused or deleted. Please visit your Supabase dashboard to check project status.');
+        } else {
+          setAuthError(error?.message || 'Failed to load user profile');
+        }
+      } finally {
+        profileOperations._loading = null;
+        setProfileLoading(false);
+      }
+    },
+
+    async createProfile(userId) {
+      try {
+        const { data: authUser } = await supabase?.auth?.getUser();
+        
+        if (!authUser?.user) {
+          throw new Error('User authentication data not available');
+        }
+
+        const { authService } = await import('../services/authService');
+        
+        const profileData = await authService?.createUserProfile({
+          id: userId,
+          email: authUser?.user?.email,
+          full_name: authUser?.user?.user_metadata?.full_name || authUser?.user?.email?.split('@')?.[0],
+          phone: authUser?.user?.user_metadata?.phone || null,
+          role: 'user'
+        });
+
+        if (profileData) {
+          setUserProfile(profileData);
+          saveSessionToStorage(user, profileData, null);
+          setAuthError(''); // Clear any previous errors
+          
+          // Log activity
+          await logActivity('profile_creation', 'Authentication', 'User profile created automatically');
+        }
+        
+      } catch (error) {
+        console.error('Error creating user profile:', error);
+        setAuthError(`Failed to create user profile: ${error?.message}`);
+      }
+    },
+    
+    clear() {
+      setUserProfile(null);
+      setEmployeeProfile(null);
+      setProfileLoading(false);
+    }
+  };
+
+  // ✅ REQUIRED: Protected auth handlers
+  const authStateHandlers = {
+    // CRITICAL: This MUST remain synchronous
+    onChange: (event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+      
+      if (session?.user) {
+        profileOperations?.load(session?.user?.id); // Fire-and-forget
+      } else {
+        profileOperations?.clear();
+      }
     }
   };
 

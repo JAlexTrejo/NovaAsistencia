@@ -1,215 +1,102 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/activity-logging-andscurity-monitoring-dashboard/index.jsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Filter, Download, Shield, Eye, Activity, RefreshCw } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
-import BrandedHeader from '../../components/ui/BrandedHeader';
-import BrandedFooter from '../../components/ui/BrandedFooter';
-import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
+import { useAuth } from '@/contexts/AuthContext';
+import BrandedHeader from '@/components/ui/BrandedHeader';
+import BrandedFooter from '@/components/ui/BrandedFooter';
+import RoleBasedSidebar from '@/components/ui/RoleBasedSidebar';
 import ActivityGrid from './components/ActivityGrid';
 import SecurityAlertPanel from './components/SecurityAlertPanel';
 import FilterPanel from './components/FilterPanel';
 import ExportPanel from './components/ExportPanel';
 import StatisticsCards from './components/StatisticsCards';
+import { useQuery } from '@/hooks/useQuery';
+import {
+  fetchActivityLogs,
+  fetchActivityStats,
+  subscribeActivityLogs,
+  unsubscribe,
+} from '@/services/activityLogService';
 
 export default function ActivityLoggingAndSecurityMonitoringDashboard() {
-  const { user, userProfile, hasRole } = useAuth();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { hasRole } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [realTimeEnabled, setRealTimeEnabled] = useState(true);
+  const hasAdminAccess = hasRole?.('admin') || hasRole?.('superadmin');
+
+  // Filtros controlados
   const [filters, setFilters] = useState({
     dateRange: 'today',
     module: 'all',
     action: 'all',
     role: 'all',
-    severity: 'all'
-  });
-  const [showFilters, setShowFilters] = useState(false);
-  const [showExport, setShowExport] = useState(false);
-  const [realTimeEnabled, setRealTimeEnabled] = useState(true);
-  const [statistics, setStatistics] = useState({
-    totalLogs: 0,
-    todayLogs: 0,
-    securityAlerts: 0,
-    activeUsers: 0
+    severity: 'all',
   });
 
-  // Check if user has admin access
-  const hasAdminAccess = hasRole?.('admin') || hasRole?.('superadmin');
+  // Parámetros memorizados para el servicio
+  const serviceParams = useMemo(
+    () => ({ ...filters, searchTerm }),
+    [filters, searchTerm]
+  );
 
+  // Carga de logs con useQuery
+  const {
+    data: logs = [],
+    isLoading: logsLoading,
+    error: logsError,
+    refetch: refetchLogs,
+    setData: setLogsData, // agregado en nuestro hook para poder inyectar nuevos datos
+  } = useQuery(fetchActivityLogs, serviceParams);
+
+  // Carga de estadísticas con useQuery
+  const {
+    data: statistics,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+    setData: setStatsData,
+  } = useQuery(fetchActivityStats);
+
+  // Suscripción en tiempo real
+  const channelRef = useRef(null);
   useEffect(() => {
-    if (!hasAdminAccess) {
-      return;
-    }
+    if (!hasAdminAccess) return;
 
-    loadActivityLogs();
-    loadStatistics();
-
-    // Set up real-time subscription for new logs
-    let subscription;
     if (realTimeEnabled) {
-      subscription = supabase
-        ?.channel('logs_actividad_changes')
-        ?.on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'logs_actividad' },
-          (payload) => {
-            const newLog = payload?.new;
-            if (newLog) {
-              setLogs(prevLogs => [newLog, ...prevLogs]);
-              updateStatistics(newLog);
-            }
-          }
-        )
-        ?.subscribe();
+      // suscribir
+      channelRef.current = subscribeActivityLogs((newLog) => {
+        // prepend al grid
+        setLogsData((prev) => [newLog, ...(prev || [])]);
+        // actualizar métricas si aplica
+        setStatsData((prev) => {
+          if (!prev) return prev;
+          const isSecurity = ['failed_login', 'unauthorized_access', 'security_violation'].includes(newLog?.accion);
+          return {
+            ...prev,
+            totalLogs: (prev.totalLogs || 0) + 1,
+            todayLogs: (prev.todayLogs || 0) + 1,
+            securityAlerts: (prev.securityAlerts || 0) + (isSecurity ? 1 : 0),
+          };
+        });
+      });
     }
 
     return () => {
-      if (subscription) {
-        supabase?.removeChannel(subscription);
+      if (channelRef.current) {
+        unsubscribe(channelRef.current);
+        channelRef.current = null;
       }
     };
-  }, [hasAdminAccess, filters, realTimeEnabled]);
+  }, [hasAdminAccess, realTimeEnabled, setLogsData, setStatsData]);
 
-  const loadActivityLogs = async () => {
-    try {
-      setLoading(true);
-      
-      let query = supabase
-        ?.from('logs_actividad')
-        ?.select(`
-          *,
-          usuarios:usuario_id (
-            nombre,
-            correo
-          )
-        `)
-        ?.order('fecha', { ascending: false });
-
-      // Apply date range filter
-      if (filters?.dateRange !== 'all') {
-        const now = new Date();
-        let startDate;
-        
-        switch (filters?.dateRange) {
-          case 'today':
-            startDate = new Date(now?.getFullYear(), now?.getMonth(), now?.getDate());
-            break;
-          case 'week':
-            startDate = new Date(now?.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-          case 'month':
-            startDate = new Date(now?.getFullYear(), now?.getMonth(), 1);
-            break;
-          default:
-            startDate = null;
-        }
-        
-        if (startDate) {
-          query = query?.gte('fecha', startDate?.toISOString());
-        }
-      }
-
-      // Apply other filters
-      if (filters?.module !== 'all') {
-        query = query?.eq('modulo', filters?.module);
-      }
-      
-      if (filters?.action !== 'all') {
-        query = query?.eq('accion', filters?.action);
-      }
-      
-      if (filters?.role !== 'all') {
-        query = query?.eq('rol', filters?.role);
-      }
-
-      // Apply search term
-      if (searchTerm?.trim()) {
-        query = query?.or(`descripcion.ilike.%${searchTerm}%,accion.ilike.%${searchTerm}%,modulo.ilike.%${searchTerm}%`);
-      }
-
-      const { data, error } = await query?.limit(1000);
-      
-      if (error) {
-        console.error('Error loading activity logs:', error);
-        return;
-      }
-      
-      setLogs(data || []);
-    } catch (error) {
-      console.error('Error in loadActivityLogs:', error);
-    } finally {
-      setLoading(false);
-    }
+  const refreshAll = () => {
+    refetchLogs();
+    refetchStats();
   };
 
-  const loadStatistics = async () => {
-    try {
-      const today = new Date();
-      const startOfDay = new Date(today?.getFullYear(), today?.getMonth(), today?.getDate());
-
-      // Get total logs count
-      const { count: totalCount } = await supabase
-        ?.from('logs_actividad')
-        ?.select('*', { count: 'exact', head: true });
-
-      // Get today's logs count
-      const { count: todayCount } = await supabase
-        ?.from('logs_actividad')
-        ?.select('*', { count: 'exact', head: true })
-        ?.gte('fecha', startOfDay?.toISOString());
-
-      // Get security alerts (failed logins, unauthorized access)
-      const { count: alertsCount } = await supabase
-        ?.from('logs_actividad')
-        ?.select('*', { count: 'exact', head: true })
-        ?.in('accion', ['failed_login', 'unauthorized_access', 'security_violation'])
-        ?.gte('fecha', startOfDay?.toISOString());
-
-      // Get active users today
-      const { data: activeUsersData } = await supabase
-        ?.from('logs_actividad')
-        ?.select('usuario_id')
-        ?.gte('fecha', startOfDay?.toISOString())
-        ?.not('usuario_id', 'is', null);
-
-      const uniqueUsers = new Set(activeUsersData?.map(log => log?.usuario_id))?.size || 0;
-
-      setStatistics({
-        totalLogs: totalCount || 0,
-        todayLogs: todayCount || 0,
-        securityAlerts: alertsCount || 0,
-        activeUsers: uniqueUsers
-      });
-    } catch (error) {
-      console.error('Error loading statistics:', error);
-    }
-  };
-
-  const updateStatistics = (newLog) => {
-    setStatistics(prev => ({
-      ...prev,
-      totalLogs: prev?.totalLogs + 1,
-      todayLogs: prev?.todayLogs + 1,
-      securityAlerts: ['failed_login', 'unauthorized_access', 'security_violation']?.includes(newLog?.accion) 
-        ? prev?.securityAlerts + 1 
-        : prev?.securityAlerts
-    }));
-  };
-
-  const handleSearch = (term) => {
-    setSearchTerm(term);
-  };
-
-  const handleFilterChange = (newFilters) => {
-    setFilters(newFilters);
-  };
-
-  const refreshLogs = () => {
-    loadActivityLogs();
-    loadStatistics();
-  };
-
-  // Redirect non-admin users
+  // Redirección visual si no es admin
   if (!hasAdminAccess) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -225,10 +112,10 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <BrandedHeader />
-      
+
       <div className="flex">
         <RoleBasedSidebar />
-        
+
         <main className="flex-1 p-6">
           {/* Header Section */}
           <div className="mb-8">
@@ -242,25 +129,28 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
                   Seguimiento completo de actividades del sistema y alertas de seguridad
                 </p>
               </div>
-              
+
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => setRealTimeEnabled(!realTimeEnabled)}
+                  onClick={() => setRealTimeEnabled((v) => !v)}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     realTimeEnabled
-                      ? 'bg-green-100 text-green-700 hover:bg-green-200' :'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   <div className="flex items-center">
-                    <div className={`h-2 w-2 rounded-full mr-2 ${
-                      realTimeEnabled ? 'bg-green-500' : 'bg-gray-400'
-                    }`} />
+                    <div
+                      className={`h-2 w-2 rounded-full mr-2 ${
+                        realTimeEnabled ? 'bg-green-500' : 'bg-gray-400'
+                      }`}
+                    />
                     Tiempo Real
                   </div>
                 </button>
-                
+
                 <button
-                  onClick={refreshLogs}
+                  onClick={refreshAll}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
@@ -270,7 +160,14 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
             </div>
 
             {/* Statistics Cards */}
-            <StatisticsCards statistics={statistics} />
+            <StatisticsCards
+              statistics={{
+                totalLogs: statistics?.totalLogs || 0,
+                todayLogs: statistics?.todayLogs || 0,
+                securityAlerts: statistics?.securityAlerts || 0,
+                activeUsers: statistics?.activeUsers || 0,
+              }}
+            />
           </div>
 
           {/* Controls Section */}
@@ -278,12 +175,12 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
               {/* Search Bar */}
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Buscar en actividades..."
                   value={searchTerm}
-                  onChange={(e) => handleSearch(e?.target?.value)}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -291,18 +188,19 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
               {/* Action Buttons */}
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => setShowFilters(!showFilters)}
+                  onClick={() => setShowFilters((v) => !v)}
                   className={`px-4 py-2 rounded-lg border transition-colors flex items-center ${
                     showFilters
-                      ? 'bg-blue-50 border-blue-300 text-blue-700' :'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   <Filter className="h-4 w-4 mr-2" />
                   Filtros
                 </button>
-                
+
                 <button
-                  onClick={() => setShowExport(!showExport)}
+                  onClick={() => setShowExport((v) => !v)}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
                 >
                   <Download className="h-4 w-4 mr-2" />
@@ -314,7 +212,10 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
             {/* Collapsible Filter Panel */}
             {showFilters && (
               <div className="mt-6 pt-6 border-t">
-                <FilterPanel filters={filters} onFilterChange={handleFilterChange} />
+                <FilterPanel
+                  filters={filters}
+                  onFilterChange={setFilters}
+                />
               </div>
             )}
 
@@ -340,18 +241,21 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
                   <h2 className="text-xl font-semibold text-gray-900 flex items-center">
                     <Eye className="h-5 w-5 text-blue-600 mr-2" />
                     Registro de Actividades
-                    {loading && (
-                      <div className="ml-3 animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    {(logsLoading) && (
+                      <div className="ml-3 animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                    )}
+                    {(logsError || statsError) && (
+                      <span className="ml-3 text-sm text-red-600">Error cargando datos</span>
                     )}
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
-                    {logs?.length || 0} registros encontrados
+                    {(logs?.length || 0)} registros encontrados
                   </p>
                 </div>
-                
-                <ActivityGrid 
-                  logs={logs} 
-                  loading={loading} 
+
+                <ActivityGrid
+                  logs={logs}
+                  loading={logsLoading}
                   searchTerm={searchTerm}
                 />
               </div>
@@ -359,7 +263,7 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
           </div>
         </main>
       </div>
-      
+
       <BrandedFooter />
     </div>
   );

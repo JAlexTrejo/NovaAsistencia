@@ -90,7 +90,7 @@ export function LoginForm() {
             <LogIn className="h-6 w-6 text-white" />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            AsistenciaPro
+            GY&ID CRM - Nova Axis
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             Inicia sesión en tu cuenta
@@ -212,7 +212,7 @@ export function LoginForm() {
           {/* System Status */}
           <div className="text-center">
             <p className="text-xs text-gray-500">
-              Sistema de Control de Asistencia v1.0
+              Sistema CRM diseñado por Alejandro Trejo y Nova Axis v1.0
             </p>
           </div>
         </div>

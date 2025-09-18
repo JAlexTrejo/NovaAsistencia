@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+// pages/personalized-worker-dashboard-with-site-integration-and-team-collaboration/index.jsx
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { enhancedAttendanceService } from '../../services/enhancedAttendanceService';
 import { AlertCircle, User } from 'lucide-react';
 
-// Components
 import PersonalInfoCard from './components/PersonalInfoCard';
 import SiteInfoCard from './components/SiteInfoCard';
 import CoworkersList from './components/CoworkersList';
@@ -12,106 +11,115 @@ import WeeklyTimecardSummary from './components/WeeklyTimecardSummary';
 import RecentIncidents from './components/RecentIncidents';
 import PayrollSummaryCard from './components/PayrollSummaryCard';
 
+import { useQuery } from '@/hooks/useQuery';
+import {
+  getWorkerProfile,
+  getSiteCoworkers,
+  getTodayAttendanceStatus,
+  getWeeklyTimecard,
+  getWorkerIncidents,
+  getRecentPayrollEstimation,
+  clockIn,
+  clockOut,
+  startLunchBreak,
+  endLunchBreak,
+} from '@/services/enhancedAttendanceService';
+
 export default function PersonalizedWorkerDashboard() {
   const { user, userProfile, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [workerProfile, setWorkerProfile] = useState(null);
-  const [coworkers, setCoworkers] = useState([]);
-  const [todayAttendance, setTodayAttendance] = useState(null);
-  const [weeklyTimecard, setWeeklyTimecard] = useState(null);
-  const [recentIncidents, setRecentIncidents] = useState([]);
-  const [payrollEstimation, setPayrollEstimation] = useState(null);
-  const [error, setError] = useState('');
+  const isWorker = userProfile?.role === 'user';
+  const userId = user?.id;
 
-  useEffect(() => {
-    if (!authLoading && user && userProfile?.role === 'user') {
-      loadWorkerDashboardData();
-    } else if (!authLoading && userProfile?.role !== 'user') {
-      setError('Esta página es solo para trabajadores de campo');
-      setLoading(false);
-    }
-  }, [user, userProfile, authLoading]);
+  // 1) Perfil del trabajador (clave para habilitar las demás)
+  const {
+    data: workerProfile,
+    isLoading: loadingProfile,
+    error: errorProfile,
+    refetch: refetchProfile,
+  } = useQuery(getWorkerProfile, {
+    params: userId,
+    enabled: !!userId && isWorker && !authLoading,
+  });
 
-  const loadWorkerDashboardData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load worker profile
-      const profileResult = await enhancedAttendanceService?.getWorkerProfile(user?.id);
-      if (!profileResult?.success) {
-        setError('No se encontró perfil de empleado');
-        return;
-      }
-      
-      setWorkerProfile(profileResult?.data);
+  const employeeId = workerProfile?.id;
+  const siteId = workerProfile?.site_id;
 
-      // Load parallel data
-      const [
-        coworkersResult,
-        todayResult,
-        weeklyResult,
-        incidentsResult,
-        payrollResult
-      ] = await Promise.all([
-        enhancedAttendanceService?.getSiteCoworkers(profileResult?.data?.site_id, user?.id),
-        enhancedAttendanceService?.getTodayAttendanceStatus(profileResult?.data?.id),
-        enhancedAttendanceService?.getWeeklyTimecard(profileResult?.data?.id),
-        enhancedAttendanceService?.getWorkerIncidents(profileResult?.data?.id, 5),
-        enhancedAttendanceService?.getRecentPayrollEstimation(profileResult?.data?.id)
-      ]);
+  // 2) Compañeros del mismo sitio
+  const {
+    data: coworkers,
+    isLoading: loadingCoworkers,
+    error: errorCoworkers,
+    refetch: refetchCoworkers,
+  } = useQuery(getSiteCoworkers, {
+    params: [siteId, userId], // nuestra función acepta (siteId, excludeUserId)
+    enabled: !!employeeId && !!siteId,
+    select: (d) => Array.isArray(d) ? d : [],
+  });
 
-      // Set data from results
-      setCoworkers(coworkersResult?.data || []);
-      setTodayAttendance(todayResult?.data);
-      setWeeklyTimecard(weeklyResult?.data);
-      setRecentIncidents(incidentsResult?.data || []);
-      setPayrollEstimation(payrollResult?.data);
-      
-    } catch (error) {
-      setError(`Error cargando datos: ${error?.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 3) Asistencia de hoy
+  const {
+    data: todayAttendance,
+    isLoading: loadingToday,
+    error: errorToday,
+    refetch: refetchToday,
+  } = useQuery(getTodayAttendanceStatus, {
+    params: employeeId,
+    enabled: !!employeeId,
+  });
 
+  // 4) Resumen semanal
+  const {
+    data: weeklyTimecard,
+    isLoading: loadingWeekly,
+    error: errorWeekly,
+    refetch: refetchWeekly,
+  } = useQuery(getWeeklyTimecard, {
+    params: employeeId,
+    enabled: !!employeeId,
+  });
+
+  // 5) Incidentes recientes
+  const {
+    data: incidents = [],
+    isLoading: loadingIncidents,
+    error: errorIncidents,
+    refetch: refetchIncidents,
+  } = useQuery(getWorkerIncidents, {
+    params: [employeeId, 5],
+    enabled: !!employeeId,
+    select: (d) => Array.isArray(d) ? d : [],
+  });
+
+  // 6) Estimación de nómina reciente
+  const {
+    data: payrollEstimation,
+    isLoading: loadingPayroll,
+    error: errorPayroll,
+    refetch: refetchPayroll,
+  } = useQuery(getRecentPayrollEstimation, {
+    params: employeeId,
+    enabled: !!employeeId,
+  });
+
+  // Handlers de acciones de asistencia
   const handleAttendanceAction = async (action, location = null, notes = null) => {
+    if (!employeeId) return;
     try {
-      setError('');
-      let result;
+      let res;
+      if (action === 'clock_in')      res = await clockIn(employeeId, { location, notes });
+      else if (action === 'clock_out')res = await clockOut(employeeId, { location, notes });
+      else if (action === 'lunch_start') res = await startLunchBreak(employeeId);
+      else if (action === 'lunch_end')   res = await endLunchBreak(employeeId);
 
-      switch (action) {
-        case 'clock_in':
-          result = await enhancedAttendanceService?.clockIn(workerProfile?.id, location, notes);
-          break;
-        case 'clock_out':
-          result = await enhancedAttendanceService?.clockOut(workerProfile?.id, location, notes);
-          break;
-        case 'lunch_start':
-          result = await enhancedAttendanceService?.startLunchBreak(workerProfile?.id);
-          break;
-        case 'lunch_end':
-          result = await enhancedAttendanceService?.endLunchBreak(workerProfile?.id);
-          break;
-        default:
-          return;
-      }
-
-      if (result?.success) {
-        // Refresh attendance data
-        const todayResult = await enhancedAttendanceService?.getTodayAttendanceStatus(workerProfile?.id);
-        setTodayAttendance(todayResult?.data);
-        
-        const weeklyResult = await enhancedAttendanceService?.getWeeklyTimecard(workerProfile?.id);
-        setWeeklyTimecard(weeklyResult?.data);
-      } else {
-        setError(result?.error || 'Error en la acción de asistencia');
-      }
-    } catch (error) {
-      setError(`Error: ${error?.message}`);
+      if (!res?.ok) throw new Error(res?.error || 'Acción inválida');
+      await Promise.all([refetchToday(), refetchWeekly()]);
+    } catch (e) {
+      alert(e.message || 'Error en la acción de asistencia');
     }
   };
 
-  if (authLoading || loading) {
+  // Estados de carga/errores
+  if (authLoading || (isWorker && loadingProfile)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -122,19 +130,39 @@ export default function PersonalizedWorkerDashboard() {
     );
   }
 
-  if (error) {
+  if (!isWorker) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
           <div className="text-center">
             <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Error de Acceso</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
+            <p className="text-gray-600 mb-4">Esta página es solo para trabajadores de campo</p>
             <button
               onClick={() => window.history?.back()}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
             >
               Volver
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (errorProfile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">No se pudo cargar el perfil</h2>
+            <p className="text-gray-600 mb-4">{errorProfile.message}</p>
+            <button
+              onClick={() => refetchProfile()}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              Reintentar
             </button>
           </div>
         </div>
@@ -161,16 +189,13 @@ export default function PersonalizedWorkerDashboard() {
                 </p>
               </div>
             </div>
-            
+
             {/* Quick Status Indicator */}
             <div className="flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">
                   {new Date()?.toLocaleDateString('es-ES', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
                   })}
                 </p>
                 <p className="text-xs text-gray-600">
@@ -184,10 +209,10 @@ export default function PersonalizedWorkerDashboard() {
           </div>
         </div>
       </header>
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
-          
           {/* Top Row - Personal Info and Site Integration */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <PersonalInfoCard 
@@ -205,6 +230,7 @@ export default function PersonalizedWorkerDashboard() {
             <AttendanceActionButtons 
               todayAttendance={todayAttendance}
               onAction={handleAttendanceAction}
+              isLoading={loadingToday}
             />
           </div>
 
@@ -213,11 +239,13 @@ export default function PersonalizedWorkerDashboard() {
             <WeeklyTimecardSummary 
               weeklyTimecard={weeklyTimecard}
               todayAttendance={todayAttendance}
+              isLoading={loadingWeekly}
             />
             <PayrollSummaryCard 
               payrollEstimation={payrollEstimation}
               weeklyTimecard={weeklyTimecard}
               workerProfile={workerProfile}
+              isLoading={loadingPayroll}
             />
           </div>
 
@@ -226,17 +254,18 @@ export default function PersonalizedWorkerDashboard() {
             <CoworkersList 
               coworkers={coworkers}
               siteInfo={workerProfile?.construction_sites}
+              isLoading={loadingCoworkers}
             />
             <RecentIncidents 
-              incidents={recentIncidents}
+              incidents={incidents}
               employeeId={workerProfile?.id}
-              onIncidentSubmitted={() => {
-                // Refresh incidents
-                enhancedAttendanceService?.getWorkerIncidents(workerProfile?.id, 5)?.then(result => setRecentIncidents(result?.data || []));
+              isLoading={loadingIncidents}
+              onIncidentSubmitted={async () => {
+                await refetchIncidents();
               }}
+              errorMessage={errorIncidents?.message}
             />
           </div>
-
         </div>
       </main>
     </div>

@@ -112,7 +112,7 @@ export default function RegisterForm({ onBackToLogin }) {
             Crear Cuenta
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Regístrate para acceder a AsistenciaPro
+            Regístrate para acceder a GY&ID CRM - Nova Axis
           </p>
         </div>
 
@@ -317,7 +317,7 @@ export default function RegisterForm({ onBackToLogin }) {
           {/* System Status */}
           <div className="text-center">
             <p className="text-xs text-gray-500">
-              Sistema de Control de Asistencia v1.0
+              Sistema CRM diseñado por Alejandro Trejo y Nova Axis v1.0
             </p>
           </div>
         </div>

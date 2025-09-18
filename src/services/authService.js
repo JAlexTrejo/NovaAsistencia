@@ -1,15 +1,18 @@
-import { supabase } from '../lib/supabase';
+// src/services/authService.js
+import { supabase } from '@/lib/supabase';
+import { adaptSupabaseError } from '@/utils/errors';
 
-// Circuit breaker to prevent excessive failed requests
+// ============================
+// Circuit Breaker (perfil)
+// ============================
 class CircuitBreaker {
   constructor(threshold = 3, resetTimeout = 30000) {
     this.threshold = threshold;
     this.resetTimeout = resetTimeout;
     this.failureCount = 0;
-    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.state = 'CLOSED';
     this.nextAttempt = Date.now();
   }
-
   async call(fn) {
     if (this.state === 'OPEN') {
       if (Date.now() < this.nextAttempt) {
@@ -17,22 +20,16 @@ class CircuitBreaker {
       }
       this.state = 'HALF_OPEN';
     }
-
     try {
       const result = await fn();
       this.onSuccess();
       return result;
-    } catch (error) {
+    } catch (err) {
       this.onFailure();
-      throw error;
+      throw err;
     }
   }
-
-  onSuccess() {
-    this.failureCount = 0;
-    this.state = 'CLOSED';
-  }
-
+  onSuccess() { this.failureCount = 0; this.state = 'CLOSED'; }
   onFailure() {
     this.failureCount++;
     if (this.failureCount >= this.threshold) {
@@ -41,480 +38,325 @@ class CircuitBreaker {
     }
   }
 }
+const profileCircuitBreaker = new CircuitBreaker(3, 30000);
 
-const profileCircuitBreaker = new CircuitBreaker(3, 30000); // 3 failures, 30 second reset
+// ============================
+// Helpers
+// ============================
+const PROFILE_COLS = [
+  'id',
+  'full_name',
+  'email',
+  'phone',          // ← nuevo
+  'daily_salary',   // ← nuevo
+  'role',
+  'active',
+  'created_at',
+  'updated_at',
+].join(',');
 
+const ok   = (data) => ({ ok: true,  data });
+const fail = (e)    => ({ ok: false, ...adaptSupabaseError(e) });
+
+function classifyError(error) {
+  if (!error) return { type: 'unknown', message: 'Unknown error occurred' };
+  const message = error?.message || '';
+  const code    = error?.code || '';
+  if (/Failed to fetch|NetworkError|ERR_NETWORK|TypeError: fetch/i.test(message))
+    return { type: 'network', message: 'Sin conexión con el servicio. Inténtalo de nuevo.' };
+  if (/Invalid API key|Project not found/i.test(message) || code === 'INVALID_API_KEY')
+    return { type: 'configuration', message: 'Error de configuración de base de datos.' };
+  if (/row-level security policy|permission denied/i.test(message) || code === 'PGRST301')
+    return { type: 'permission', message: 'Acceso denegado por políticas de seguridad.' };
+  if (code === 'PGRST116' || /No rows found/i.test(message))
+    return { type: 'not_found', message: 'Registro no encontrado.' };
+  if (/^PGRST|^22|^23/.test(code))
+    return { type: 'database', message: 'Error de base de datos.' };
+  return { type: 'unknown', message: message || 'Ocurrió un error inesperado.' };
+}
+
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const t = classifyError(e).type;
+      if (t === 'configuration' || t === 'permission') throw e;
+      if (attempt === maxRetries) throw e;
+      const ms = baseDelay * Math.pow(2, attempt - 1);
+      await new Promise(r => setTimeout(r, ms));
+    }
+  }
+}
+
+// ============================
+// authService
+// ============================
 export const authService = {
-  // Enhanced error classification
-  classifyError(error) {
-    if (!error) return { type: 'unknown', message: 'Unknown error occurred' };
-
-    const message = error?.message || '';
-    const code = error?.code || '';
-
-    // Network connectivity issues
-    if (message?.includes('Failed to fetch') || 
-        message?.includes('NetworkError') ||
-        message?.includes('ERR_NETWORK') ||
-        error?.name === 'TypeError' && message?.includes('fetch')) {
-      return {
-        type: 'network',
-        message: 'Cannot connect to database. Your Supabase project may be paused, deleted, or experiencing connectivity issues.',
-        userAction: 'Check your internet connection and verify your Supabase project status.',
-        technicalDetails: message
-      };
-    }
-
-    // Supabase project issues
-    if (message?.includes('Invalid API key') || 
-        message?.includes('Project not found') ||
-        code === 'INVALID_API_KEY') {
-      return {
-        type: 'configuration',
-        message: 'Database configuration error. Please check your environment settings.',
-        userAction: 'Contact your system administrator.',
-        technicalDetails: message
-      };
-    }
-
-    // RLS policy issues
-    if (message?.includes('row-level security policy') ||
-        code === 'PGRST301'|| message?.includes('permission denied')) {
-      return {
-        type: 'permission',
-        message: 'Access denied. You may not have permission to view this profile.',
-        userAction: 'Contact your administrator if you believe this is an error.',
-        technicalDetails: message
-      };
-    }
-
-    // Record not found
-    if (code === 'PGRST116') {
-      return {
-        type: 'not_found',
-        message: 'Profile not found.',
-        userAction: 'Profile will be created automatically.',
-        technicalDetails: message
-      };
-    }
-
-    // Database/SQL errors
-    if (code?.startsWith('PGRST') || code?.startsWith('22') || code?.startsWith('23')) {
-      return {
-        type: 'database',
-        message: 'Database error occurred.',
-        userAction: 'Please try again. Contact support if the issue persists.',
-        technicalDetails: `${code}: ${message}`
-      };
-    }
-
-    return {
-      type: 'unknown',
-      message: message || 'An unexpected error occurred.',
-      userAction: 'Please try again.',
-      technicalDetails: message
-    };
-  },
-
-  // Enhanced retry mechanism with exponential backoff
-  async retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        const errorInfo = this.classifyError(error);
-        
-        // Don't retry certain error types
-        if (['configuration', 'permission']?.includes(errorInfo?.type)) {
-          throw error;
-        }
-
-        if (attempt === maxRetries) {
-          console.error(`Final retry attempt failed:`, errorInfo);
-          throw error;
-        }
-
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = baseDelay * Math.pow(2, attempt - 1);
-        console.warn(`Retry attempt ${attempt}/${maxRetries} after ${delay}ms:`, errorInfo?.technicalDetails);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  },
-
-  // Enhanced connection test
   async testConnection() {
     try {
-      // Test 1: Basic Supabase client initialization
-      if (!supabase) {
-        return { 
-          success: false, 
-          error: 'Supabase client not initialized',
-          type: 'configuration'
-        };
-      }
+      if (!supabase) return fail({ message: 'Supabase client not initialized' });
+      const url = import.meta.env?.VITE_SUPABASE_URL;
+      const key = import.meta.env?.VITE_SUPABASE_ANON_KEY;
+      if (!url || !key) return fail({ message: 'Missing env: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY', code: 'CONFIG' });
 
-      // Test 2: Environment variables
-      const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
-      
-      if (!supabaseUrl || !supabaseKey) {
-        return {
-          success: false,
-          error: 'Missing Supabase configuration. Please check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
-          type: 'configuration'
-        };
-      }
+      const { error: sErr } = await supabase.auth.getSession();
+      if (sErr) return fail(sErr);
 
-      // Test 3: Simple auth health check
-      const { error: sessionError } = await supabase?.auth?.getSession();
-      if (sessionError) {
-        throw sessionError;
-      }
+      const { error: dbErr } = await supabase.from('user_profiles').select('id').limit(1);
+      if (dbErr) return fail(dbErr);
 
-      // Test 4: Database connectivity with a simple query
-      const { error: dbError } = await supabase
-        ?.from('user_profiles')
-        ?.select('count')
-        ?.limit(1);
-      
-      if (dbError) {
-        throw dbError;
-      }
-
-      return { success: true };
-
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return {
-        success: false,
-        error: errorInfo?.message,
-        type: errorInfo?.type,
-        userAction: errorInfo?.userAction,
-        technicalDetails: errorInfo?.technicalDetails
-      };
+      return ok(true);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Sign in with enhanced error handling
   async signIn(email, password) {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data, error } = await supabase?.auth?.signInWithPassword({
-          email,
-          password
-        });
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          return { success: false, error: errorInfo?.message, details: errorInfo };
-        }
-        
-        return { success: true, user: data?.user };
+      const res = await retryWithBackoff(async () => {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        return data;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+      return ok({ user: res?.user, session: res?.session });
+    } catch (e) {
+      const info = classifyError(e);
+      return { ok: false, error: info.message, code: info.type };
     }
   },
 
-  // Sign up with enhanced error handling
-  async signUp(email, password, fullName, role = 'user') {
+  async signUp(email, password, fullName, role = 'user', phone = null, dailySalary = 0) {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data, error } = await supabase?.auth?.signUp({
+      // Creamos el usuario en auth con metadatos útiles
+      const res = await retryWithBackoff(async () => {
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: {
-              full_name: fullName,
-              role: role
-            }
-          }
+          options: { data: { full_name: fullName, role, phone, daily_salary: dailySalary } },
         });
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          return { success: false, error: errorInfo?.message, details: errorInfo };
-        }
-        
-        return { success: true, user: data?.user };
+        if (error) throw error;
+        return data;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+
+      // Opcional: crear perfil en user_profiles si tu flujo lo requiere ya (RLS permite Admin; para usuario normal puede fallar)
+      // Recomendado: hacerlo desde un job/edge function con service role, o desde un Admin en backoffice.
+      // Aquí lo intentamos, pero NO rompemos si falla por RLS.
+      if (res?.user?.id) {
+        const payload = {
+          id: res.user.id,
+          email,
+          full_name: fullName ?? null,
+          phone: phone ?? null,
+          daily_salary: Number.isFinite(+dailySalary) ? +dailySalary : 0,
+          role,
+          active: true,
+        };
+        const { error: upErr } = await supabase.from('user_profiles').insert([payload]).select('id').maybeSingle();
+        if (upErr) {
+          // No interrumpimos el alta de auth; solo log
+          console.warn('No se pudo crear user_profiles por RLS (probable):', upErr.message);
+        }
+      }
+
+      return ok({ user: res?.user, session: res?.session });
+    } catch (e) {
+      const info = classifyError(e);
+      return { ok: false, error: info.message, code: info.type };
     }
   },
 
-  // Sign up with phone OTP
   async signUpWithPhone(phone, fullName, role = 'user') {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data, error } = await supabase?.auth?.signInWithOtp({
-          phone: phone,
-          options: {
-            data: {
-              full_name: fullName,
-              role: role
-            }
-          }
+      const res = await retryWithBackoff(async () => {
+        const { data, error } = await supabase.auth.signInWithOtp({
+          phone,
+          options: { data: { full_name: fullName, role } },
         });
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          return { success: false, error: errorInfo?.message, details: errorInfo };
-        }
-        
-        return { success: true, data: data };
+        if (error) throw error;
+        return data;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+      return ok(res);
+    } catch (e) {
+      const info = classifyError(e);
+      return { ok: false, error: info.message, code: info.type };
     }
   },
 
-  // Enhanced OTP methods
   async sendPhoneOTP(phone) {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data, error } = await supabase?.auth?.signInWithOtp({
-          phone: phone
-        });
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          return { success: false, error: errorInfo?.message, details: errorInfo };
-        }
-        
-        return { success: true, data: data };
+      const res = await retryWithBackoff(async () => {
+        const { data, error } = await supabase.auth.signInWithOtp({ phone });
+        if (error) throw error;
+        return data;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+      return ok(res);
+    } catch (e) {
+      const info = classifyError(e);
+      return { ok: false, error: info.message, code: info.type };
     }
   },
 
   async sendEmailOTP(email) {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data, error } = await supabase?.auth?.signInWithOtp({
-          email: email
-        });
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          return { success: false, error: errorInfo?.message, details: errorInfo };
-        }
-        
-        return { success: true, data: data };
+      const res = await retryWithBackoff(async () => {
+        const { data, error } = await supabase.auth.signInWithOtp({ email });
+        if (error) throw error;
+        return data;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+      return ok(res);
+    } catch (e) {
+      const info = classifyError(e);
+      return { ok: false, error: info.message, code: info.type };
     }
   },
 
-  async verifyOTP(phone, email, token, type = 'sms') {
+  async verifyOTP({ phone, email, token, type = 'sms' }) {
     try {
-      return await this.retryWithBackoff(async () => {
-        const verifyData = {
-          token: token,
-          type: type
-        };
-
-        if (phone) {
-          verifyData.phone = phone;
-        } else if (email) {
-          verifyData.email = email;
-        }
-
-        const { data, error } = await supabase?.auth?.verifyOtp(verifyData);
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          return { success: false, error: errorInfo?.message, details: errorInfo };
-        }
-        
-        return { success: true, user: data?.user, session: data?.session };
+      const res = await retryWithBackoff(async () => {
+        const verifyData = { token, type };
+        if (phone) verifyData.phone = phone; else if (email) verifyData.email = email;
+        const { data, error } = await supabase.auth.verifyOtp(verifyData);
+        if (error) throw error;
+        return data;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+      return ok({ user: res?.user, session: res?.session });
+    } catch (e) {
+      const info = classifyError(e);
+      return { ok: false, error: info.message, code: info.type };
     }
   },
 
-  // Sign out with enhanced error handling
   async signOut() {
     try {
-      const { error } = await supabase?.auth?.signOut();
-      if (error) {
-        const errorInfo = this.classifyError(error);
-        return { success: false, error: errorInfo?.message, details: errorInfo };
-      }
-      return { success: true };
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      return { success: false, error: errorInfo?.message, details: errorInfo };
+      const { error } = await supabase.auth.signOut();
+      if (error) return fail(error);
+      return ok(true);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get current session with enhanced error handling
-  getSession: async () => {
+  async getSession() {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data: { session }, error } = await supabase?.auth?.getSession();
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          throw new Error(errorInfo.message);
-        }
-        return session;
+      const res = await retryWithBackoff(async () => {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        return session || null;
       });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      throw new Error(errorInfo.message);
+      return ok(res);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Enhanced profile fetching with circuit breaker
-  getUserProfile: async (userId) => {
-    if (!userId) {
-      throw new Error('User ID is required to fetch profile');
-    }
-
+  // ============================
+  // USER PROFILE
+  // ============================
+  async getUserProfile(userId) {
+    if (!userId) return { ok: false, error: 'User ID is required', code: 'VALIDATION' };
     try {
-      return await profileCircuitBreaker?.call(async () => {
+      const data = await profileCircuitBreaker.call(async () => {
         const { data, error } = await supabase
-          ?.from('user_profiles')
-          ?.select('*')
-          ?.eq('id', userId)
-          ?.single();
-        
+          .from('user_profiles')
+          .select(PROFILE_COLS)
+          .eq('id', userId)
+          .maybeSingle();
         if (error) {
-          const errorInfo = authService?.classifyError(error);
-          
-          // Handle case where profile doesn't exist yet
-          if (errorInfo?.type === 'not_found') {
-            return null;
-          }
-          
-          // Log structured error for debugging
-          console.error('Profile fetch error:', {
-            userId,
-            errorType: errorInfo?.type,
-            message: errorInfo?.message,
-            technicalDetails: errorInfo?.technicalDetails,
-            userAction: errorInfo?.userAction
-          });
-          
-          throw new Error(errorInfo.message);
+          const info = classifyError(error);
+          if (info.type === 'not_found') return null;
+          console.error('Profile fetch error:', { userId, info });
+          throw new Error(info.message);
         }
-        
-        return data;
+        return data || null;
       });
-    } catch (error) {
-      // If circuit breaker is open, provide a more user-friendly message
-      if (error?.message?.includes('Circuit breaker is OPEN')) {
-        throw new Error('Service temporarily unavailable. Please wait a moment and try again.');
+      return ok(data);
+    } catch (e) {
+      if (String(e?.message || '').includes('Circuit breaker is OPEN')) {
+        return { ok: false, error: 'Service temporarily unavailable. Please try again shortly.', code: 'CB_OPEN' };
       }
-      throw error;
+      return fail(e);
     }
   },
 
-  // Create user profile with enhanced error handling
-  createUserProfile: async (userData) => {
+  async createUserProfile(user) {
     try {
-      return await this.retryWithBackoff(async () => {
-        const { data, error } = await supabase?.from('user_profiles')?.insert([{
-            id: userData?.id,
-            email: userData?.email,
-            full_name: userData?.full_name,
-            phone: userData?.phone,
-            role: userData?.role || 'usuario',
-            employee_id: userData?.employee_id,
-            daily_salary: userData?.daily_salary || 0,
-            is_active: true
-          }])?.select()?.single();
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          throw new Error(errorInfo.message);
-        }
-        
-        return data;
-      });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      throw new Error(errorInfo.message);
+      const payload = {
+        id: user?.id,
+        email: user?.email ?? null,
+        full_name: user?.full_name ?? null,
+        phone: user?.phone ?? null,                                  // ← nuevo
+        daily_salary: Number.isFinite(+user?.daily_salary) ? +user?.daily_salary : 0, // ← nuevo
+        role: user?.role ?? 'user',
+        active: true,
+      };
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .insert([payload])
+        .select(PROFILE_COLS)
+        .maybeSingle();
+
+      if (error) return fail(error);
+      return ok(data);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Update user profile with enhanced error handling
-  updateUserProfile: async (userId, updates) => {
+  async updateUserProfile(userId, updates) {
     try {
-      return await this.retryWithBackoff(async () => {
-        // Use the correct column names for user_profiles table
-        const mappedUpdates = {};
-        if (updates?.email) mappedUpdates.email = updates?.email;
-        if (updates?.full_name) mappedUpdates.full_name = updates?.full_name;
-        if (updates?.phone) mappedUpdates.phone = updates?.phone;
-        if (updates?.role) mappedUpdates.role = updates?.role;
-        if (updates?.is_active !== undefined) mappedUpdates.is_active = updates?.is_active;
-        if (updates?.employee_id) mappedUpdates.employee_id = updates?.employee_id;
-        if (updates?.daily_salary !== undefined) mappedUpdates.daily_salary = updates?.daily_salary;
+      const mapped = {};
+      if ('email' in updates)        mapped.email = updates.email;
+      if ('full_name' in updates)    mapped.full_name = updates.full_name;
+      if ('phone' in updates)        mapped.phone = updates.phone; // ← nuevo
+      if ('daily_salary' in updates) mapped.daily_salary = Number.isFinite(+updates.daily_salary) ? +updates.daily_salary : 0; // ← nuevo
+      if ('role' in updates)         mapped.role = updates.role;
+      if ('active' in updates)       mapped.active = !!updates.active;
 
-        const { data, error } = await supabase?.from('user_profiles')?.update(mappedUpdates)?.eq('id', userId)?.select()?.single();
-        
-        if (error) {
-          const errorInfo = this.classifyError(error);
-          throw new Error(errorInfo.message);
-        }
-        
-        return data;
-      });
-    } catch (error) {
-      const errorInfo = this.classifyError(error);
-      throw new Error(errorInfo.message);
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .update(mapped)
+        .eq('id', userId)
+        .select(PROFILE_COLS)
+        .maybeSingle();
+
+      if (error) return fail(error);
+      return ok(data);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Enhanced activity logging with error handling
+  // ============================
+  // Auditoría opcional
+  // ============================
   async logActivity(action, module, description, userId = null) {
     try {
-      await supabase?.rpc('log_activity', {
+      await supabase.rpc('log_activity', {
         p_accion: action,
         p_modulo: module,
         p_descripcion: description,
-        p_usuario_id: userId
+        p_usuario_id: userId,
       });
-      return { success: true };
-    } catch (error) {
-      // Activity logging failures should not break the main flow
-      console.error('Failed to log activity:', {
-        action,
-        module,
-        description,
-        userId,
-        error: error?.message
-      });
-      return { success: false, error: 'Failed to log activity' };
+      return ok(true);
+    } catch (e) {
+      console.error('Failed to log activity:', { action, module, description, userId, error: e?.message });
+      return { ok: false, error: 'Failed to log activity' };
     }
   },
 
-  // Get circuit breaker status for monitoring
   getCircuitBreakerStatus() {
     return {
-      state: profileCircuitBreaker?.state,
-      failureCount: profileCircuitBreaker?.failureCount,
-      nextAttempt: profileCircuitBreaker?.nextAttempt
+      state: profileCircuitBreaker.state,
+      failureCount: profileCircuitBreaker.failureCount,
+      nextAttempt: profileCircuitBreaker.nextAttempt,
     };
   },
-
-  // Reset circuit breaker manually
   resetCircuitBreaker() {
     profileCircuitBreaker.failureCount = 0;
     profileCircuitBreaker.state = 'CLOSED';
     profileCircuitBreaker.nextAttempt = Date.now();
-  }
+  },
 };
 
 export default authService;

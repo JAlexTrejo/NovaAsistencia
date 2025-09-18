@@ -1,358 +1,321 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { adaptSupabaseError } from '@/utils/errors';
+
+const ok   = (data) => ({ ok: true, data });
+const fail = (e)    => ({ ok: false, ...adaptSupabaseError(e) });
+
+// Columnas explícitas de la tabla incidents
+const INC_BASE_COLS = [
+  'id',
+  'employee_id',
+  'type',
+  'date',
+  'description',
+  'status',
+  'attachment_urls',
+  'attachment_count',
+  'approval_comments',
+  'approved_by',
+  'approved_at',
+  'created_at',
+  'updated_at',
+].join(',');
+
+// Relaciones usadas en vistas (manteniendo tus FKs explícitos)
+const NEST_EMPLOYEE = `
+  user_profiles!incidents_employee_id_fkey (
+    id,
+    full_name,
+    employee_id
+  )
+`;
+
+const NEST_APPROVER = `
+  approved_by_profile:user_profiles!incidents_approved_by_fkey (
+    id,
+    full_name
+  )
+`;
+
+// Nombre del bucket de Storage
+const BUCKET = 'incident-attachments';
 
 export const incidentService = {
-  // Create new incident with file attachments
+  /**
+   * Crear incidencia con adjuntos (opcional)
+   */
   async createIncident(incidentData, attachmentFiles = []) {
     try {
-      const { data: incident, error: incidentError } = await supabase
-        ?.from('incidents')
-        ?.insert({
-          employee_id: incidentData?.employee_id,
-          type: incidentData?.type,
-          date: incidentData?.date,
-          description: incidentData?.description,
-          status: 'pendiente',
-          attachment_count: attachmentFiles?.length || 0
-        })
-        ?.select()
-        ?.single()
-
-      if (incidentError) {
-        return { success: false, error: incidentError?.message };
-      }
-
-      // Upload attachments if provided
-      let uploadedUrls = []
-      if (attachmentFiles?.length > 0) {
-        const uploadResult = await this.uploadIncidentAttachments(
-          incident?.id, 
-          incidentData?.employee_id, 
-          attachmentFiles
-        )
-        
-        if (!uploadResult?.success) {
-          // Delete incident if file upload fails
-          await supabase?.from('incidents')?.delete()?.eq('id', incident?.id)
-          return { success: false, error: uploadResult?.error };
-        }
-        
-        uploadedUrls = uploadResult?.urls || []
-        
-        // Update incident with attachment URLs
-        const { error: updateError } = await supabase
-          ?.from('incidents')
-          ?.update({ 
-            attachment_urls: uploadedUrls,
-            attachment_count: uploadedUrls?.length 
-          })
-          ?.eq('id', incident?.id)
-
-        if (updateError) {
-          return { success: false, error: updateError?.message };
-        }
-      }
-
-      return { 
-        success: true, 
-        incident: { 
-          ...incident, 
-          attachment_urls: uploadedUrls,
-          attachment_count: uploadedUrls?.length 
-        } 
+      const payload = {
+        employee_id: incidentData?.employee_id,
+        type:        incidentData?.type,
+        date:        incidentData?.date,
+        description: incidentData?.description,
+        status:      'pendiente',
+        attachment_count: Array.isArray(attachmentFiles) ? attachmentFiles.length : 0,
       };
-    } catch (error) {
-      return { success: false, error: 'Error al crear incidencia' }
-    }
-  },
 
-  // Upload incident attachments to Supabase Storage
-  async uploadIncidentAttachments(incidentId, employeeId, files) {
-    try {
-      const uploadPromises = files?.map(async (file, index) => {
-        const fileExt = file?.name?.split('.')?.pop()
-        const fileName = `${incidentId}_${index + 1}_${Date.now()}.${fileExt}`
-        const filePath = `${employeeId}/${fileName}`
+      const { data: incident, error: insertErr } = await supabase
+        .from('incidents')
+        .insert([payload])
+        .select(INC_BASE_COLS)
+        .single();
 
-        const { data, error } = await supabase?.storage
-          ?.from('incident-attachments')
-          ?.upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          })
+      if (insertErr) return fail(insertErr);
+      if (!incident) return fail(new Error('No se pudo crear la incidencia'));
 
-        if (error) {
-          throw new Error(`Error uploading ${file?.name}: ${error?.message}`)
+      // Subir adjuntos si hay
+      let urls = [];
+      if (attachmentFiles?.length) {
+        const up = await this.uploadIncidentAttachments(incident.id, incidentData?.employee_id, attachmentFiles);
+        if (!up.ok) {
+          // rollback: eliminar incidente si fallan archivos
+          await supabase.from('incidents').delete().eq('id', incident.id);
+          return up; // { ok: false, error }
         }
+        urls = up.data || [];
 
-        // Get public URL
-        const { data: urlData } = supabase?.storage
-          ?.from('incident-attachments')
-          ?.getPublicUrl(filePath)
+        // Actualizar URLs y conteo
+        const { error: updErr } = await supabase
+          .from('incidents')
+          .update({ attachment_urls: urls, attachment_count: urls.length })
+          .eq('id', incident.id);
 
-        return urlData?.publicUrl
-      })
+        if (updErr) return fail(updErr);
+      }
 
-      const urls = await Promise.all(uploadPromises)
-      return { success: true, urls }
-    } catch (error) {
-      return { success: false, error: error?.message || 'Error al subir archivos' }
+      return ok({ ...incident, attachment_urls: urls, attachment_count: urls.length });
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get incident attachments
+  /**
+   * Subir adjuntos a Storage
+   * Devuelve lista de URLs públicas (o firmadas si activas el bloque alternativo)
+   */
+  async uploadIncidentAttachments(incidentId, employeeId, files = []) {
+    try {
+      if (!files.length) return ok([]);
+
+      const uploads = files.map(async (file, idx) => {
+        const ext = file?.name?.split('.')?.pop()?.toLowerCase() || 'bin';
+        const filename = `${incidentId}_${idx + 1}_${Date.now()}.${ext}`;
+        const path = `${employeeId}/${filename}`;
+
+        const { error: upErr } = await supabase
+          .storage
+          .from(BUCKET)
+          .upload(path, file, { cacheControl: '3600', upsert: false });
+
+        if (upErr) throw new Error(`Error subiendo ${file?.name}: ${upErr.message}`);
+
+        // === Opción 1: URL pública (si el bucket es público) ===
+        const { data: publicURL } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        return publicURL?.publicUrl;
+
+        // === Opción 2 (segura): URL firmada (recomendado para bucket privado) ===
+        // const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60); // 1h
+        // return signed?.signedUrl;
+      });
+
+      const urls = await Promise.all(uploads);
+      return ok(urls);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+
+  /**
+   * Obtener URLs de adjuntos de una incidencia
+   */
   async getIncidentAttachments(incidentId) {
     try {
       const { data, error } = await supabase
-        ?.from('incidents')
-        ?.select('attachment_urls, attachment_count')
-        ?.eq('id', incidentId)
-        ?.single()
+        .from('incidents')
+        .select('attachment_urls, attachment_count')
+        .eq('id', incidentId)
+        .single();
 
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true, attachments: data?.attachment_urls || [] }
-    } catch (error) {
-      return { success: false, error: 'Error al obtener archivos adjuntos' }
+      if (error) return fail(error);
+      return ok(data?.attachment_urls || []);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get all incidents (admin view)
-  async getAllIncidents(startDate = null, endDate = null, status = null, employeeId = null) {
+  /**
+   * Listado admin con filtros
+   */
+  async getAllIncidents({ startDate, endDate, status, employeeId } = {}) {
     try {
       let query = supabase
-        ?.from('incidents')
-        ?.select(`
-          *,
-          user_profiles!incidents_employee_id_fkey (
-            full_name,
-            employee_id
-          ),
-          approved_by_profile:user_profiles!incidents_approved_by_fkey (
-            full_name
-          )
-        `)
-        ?.order('created_at', { ascending: false })
+        .from('incidents')
+        .select([INC_BASE_COLS, NEST_EMPLOYEE, NEST_APPROVER].join(','))
+        .order('created_at', { ascending: false });
 
-      if (startDate) {
-        query = query?.gte('date', startDate)
-      }
-      if (endDate) {
-        query = query?.lte('date', endDate)
-      }
-      if (status && status !== 'all') {
-        query = query?.eq('status', status)
-      }
-      if (employeeId) {
-        query = query?.eq('employee_id', employeeId)
-      }
+      if (startDate)  query = query.gte('date', startDate);
+      if (endDate)    query = query.lte('date', endDate);
+      if (status && status !== 'all') query = query.eq('status', status);
+      if (employeeId) query = query.eq('employee_id', employeeId);
 
-      const { data, error } = await query
-
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true, incidents: data }
-    } catch (error) {
-      return { success: false, error: 'Error al obtener incidencias' }
+      const { data, error } = await query;
+      if (error) return fail(error);
+      return ok(data || []);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get employee's incidents
+  /**
+   * Incidencias por empleado (con rango opcional)
+   */
   async getEmployeeIncidents(employeeId, startDate = null, endDate = null) {
     try {
       let query = supabase
-        ?.from('incidents')
-        ?.select(`
-          *,
-          approved_by_profile:user_profiles!incidents_approved_by_fkey (
-            full_name
-          )
-        `)
-        ?.eq('employee_id', employeeId)
-        ?.order('created_at', { ascending: false })
+        .from('incidents')
+        .select([INC_BASE_COLS, NEST_APPROVER].join(','))
+        .eq('employee_id', employeeId)
+        .order('created_at', { ascending: false });
 
-      if (startDate) {
-        query = query?.gte('date', startDate)
-      }
-      if (endDate) {
-        query = query?.lte('date', endDate)
-      }
+      if (startDate) query = query.gte('date', startDate);
+      if (endDate)   query = query.lte('date', endDate);
 
-      const { data, error } = await query
-
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true, incidents: data }
-    } catch (error) {
-      return { success: false, error: 'Error al obtener incidencias del empleado' }
+      const { data, error } = await query;
+      if (error) return fail(error);
+      return ok(data || []);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Approve or reject incident
+  /**
+   * Aprobar / rechazar incidencia (con comentarios)
+   */
   async updateIncidentStatus(incidentId, status, approvedBy, comments = null) {
     try {
-      const updateData = {
+      const update = {
         status,
         approved_by: approvedBy,
-        approved_at: new Date()?.toISOString(),
-        updated_at: new Date()?.toISOString()
-      }
+        approved_at: new Date().toISOString(),
+        updated_at:  new Date().toISOString(),
+        ...(comments ? { approval_comments: comments } : {}),
+      };
 
-      if (comments) {
-        updateData.approval_comments = comments
-      }
+      const { data, error } = await supabase
+        .from('incidents')
+        .update(update)
+        .eq('id', incidentId)
+        .select([INC_BASE_COLS, NEST_EMPLOYEE, NEST_APPROVER].join(','))
+        .single();
 
-      const { data, error } = await supabase?.from('incidents')?.update(updateData)?.eq('id', incidentId)?.select(`
-          *,
-          user_profiles (
-            full_name,
-            employee_id
-          ),
-          approved_by_profile:user_profiles!incidents_approved_by_fkey (
-            full_name
-          )
-        `)?.single()
-
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true, incident: data }
-    } catch (error) {
-      return { success: false, error: 'Failed to update incident status' }
+      if (error) return fail(error);
+      return ok(data);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get incidents by date range
+  /**
+   * Incidencias por rango de fechas (opcional por empleado)
+   */
   async getIncidentsByDateRange(startDate, endDate, employeeId = null) {
     try {
-      let query = supabase?.from('incidents')?.select(`
-          *,
-          user_profiles (
-            full_name,
-            employee_id
-          )
-        `)?.gte('date', startDate)?.lte('date', endDate)?.order('date', { ascending: false })
+      let query = supabase
+        .from('incidents')
+        .select([INC_BASE_COLS, NEST_EMPLOYEE].join(','))
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: false });
 
-      if (employeeId) {
-        query = query?.eq('employee_id', employeeId)
-      }
+      if (employeeId) query = query.eq('employee_id', employeeId);
 
-      const { data, error } = await query
-
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true, incidents: data }
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch incidents by date range' }
+      const { data, error } = await query;
+      if (error) return fail(error);
+      return ok(data || []);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Delete incident (only for pending incidents)
+  /**
+   * Eliminar incidencia (borra adjuntos del bucket si existen)
+   * Solo debería permitirse si está 'pendiente' (hazlo cumplir en RLS)
+   */
   async deleteIncident(incidentId) {
     try {
-      // First, get incident details to delete attachments
-      const { data: incident } = await supabase
-        ?.from('incidents')
-        ?.select('attachment_urls, employee_id')
-        ?.eq('id', incidentId)
-        ?.single()
+      // Buscar para saber qué borrar del bucket
+      const { data: inc, error: getErr } = await supabase
+        .from('incidents')
+        .select('attachment_urls, employee_id')
+        .eq('id', incidentId)
+        .single();
 
-      // Delete attachments from storage
-      if (incident?.attachment_urls?.length > 0) {
-        const filePaths = incident?.attachment_urls?.map(url => {
-          const urlParts = url?.split('/')
-          return `${incident?.employee_id}/${urlParts?.[urlParts?.length - 1]}`
-        })
+      if (getErr) return fail(getErr);
 
-        await supabase?.storage
-          ?.from('incident-attachments')
-          ?.remove(filePaths)
+      if (Array.isArray(inc?.attachment_urls) && inc.attachment_urls.length > 0) {
+        // Mapear las URLs a paths (asumiendo estructura {employee_id}/{filename})
+        const paths = inc.attachment_urls.map((url) => {
+          const last = url?.split('/')?.pop();
+          return `${inc.employee_id}/${last}`;
+        });
+
+        const { error: rmErr } = await supabase.storage.from(BUCKET).remove(paths);
+        if (rmErr) return fail(rmErr);
       }
 
-      // Delete incident record
-      const { error } = await supabase
-        ?.from('incidents')
-        ?.delete()
-        ?.eq('id', incidentId)
+      const { error: delErr } = await supabase.from('incidents').delete().eq('id', incidentId);
+      if (delErr) return fail(delErr);
 
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: 'Failed to delete incident' }
+      return ok(true);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Get incident statistics
+  /**
+   * Estadísticas simples por tipo/estado en un rango
+   */
   async getIncidentStats(startDate, endDate) {
     try {
-      const { data, error } = await supabase?.from('incidents')?.select('type, status')?.gte('date', startDate)?.lte('date', endDate)
+      const { data, error } = await supabase
+        .from('incidents')
+        .select('type, status')
+        .gte('date', startDate)
+        .lte('date', endDate);
 
-      if (error) {
-        return { success: false, error: error?.message };
-      }
+      if (error) return fail(error);
 
-      // Calculate statistics
       const stats = {
         total: data?.length || 0,
         byType: {},
         byStatus: {},
         pending: 0,
         approved: 0,
-        rejected: 0
-      }
+        rejected: 0,
+      };
 
-      data?.forEach(incident => {
-        // Count by type
-        stats.byType[incident.type] = (stats?.byType?.[incident?.type] || 0) + 1
-        
-        // Count by status
-        stats.byStatus[incident.status] = (stats?.byStatus?.[incident?.status] || 0) + 1
-        
-        // Count specific statuses
-        if (incident?.status === 'pendiente') stats.pending++
-        if (incident?.status === 'aprobada') stats.approved++
-        if (incident?.status === 'rechazada') stats.rejected++
-      })
+      (data || []).forEach((inc) => {
+        stats.byType[inc.type]   = (stats.byType[inc.type] || 0) + 1;
+        stats.byStatus[inc.status] = (stats.byStatus[inc.status] || 0) + 1;
 
-      return { success: true, stats }
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch incident statistics' }
+        if (inc.status === 'pendiente') stats.pending += 1;
+        if (inc.status === 'aprobada')  stats.approved += 1;
+        if (inc.status === 'rechazada')  stats.rejected += 1;
+      });
+
+      return ok(stats);
+    } catch (e) {
+      return fail(e);
     }
   },
 
-  // Approve incident
+  /**
+   * Atajo para aprobar/rechazar sin comentarios
+   */
   async approveIncident(incidentId, approvedBy, decision = 'aprobada') {
-    try {
-      const { data, error } = await supabase
-        ?.from('incidents')
-        ?.update({
-          status: decision,
-          approved_by: approvedBy,
-          approved_at: new Date()?.toISOString(),
-          updated_at: new Date()?.toISOString()
-        })
-        ?.eq('id', incidentId)
-        ?.select()
-        ?.single()
+    return this.updateIncidentStatus(incidentId, decision, approvedBy);
+  },
+};
 
-      if (error) {
-        return { success: false, error: error?.message };
-      }
-
-      return { success: true, incident: data }
-    } catch (error) {
-      return { success: false, error: 'Error al aprobar incidencia' }
-    }
-  }
-}
+export default incidentService;
