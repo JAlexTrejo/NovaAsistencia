@@ -1,0 +1,352 @@
+# Nova Asistencia — Functional & Technical Specification (for Replit)
+
+> **Goal:** Provide Replit (or any code assistant/LLM) with a clear map of **what the app must do**, including **logic**, **screens**, **buttons**, **functions/services**, **data model**, **security rules**, and **quality criteria** so it can review, fix, or optimize any gaps.
+>
+> **Important:** **All end‑user UI must remain in Spanish** (labels, button texts, empty states, errors). This spec is in English only for code‑review clarity.
+
+---
+
+## 1) Executive Summary
+
+* **Product:** Attendance, shift tracking, and weekly payroll system (**Nova Asistencia**) with roles **SuperAdmin**, **Admin**, **Supervisor**, **User**.
+* **Expected stack:** React + Vite + Tailwind + React Router + TanStack Query; backend **Supabase** (PostgreSQL, Auth, Storage, Realtime); deployment on **VPS (Contabo)** with **Docker/Nginx**.
+* **Integrations:** WhatsApp (Zoko / custom webhook), optional Google Sheets for audit trails, CSV/XLSX exports, Map library (Leaflet or Google Maps) for geofences.
+* **Pillars:** Security (RLS-first), performance (caching + pagination), traceability (audit logs), role-based UX, consistent payroll calculations.
+
+---
+
+## 2) Roles & Permissions
+
+* **SuperAdmin:** Global CRUD for employees, sites/works, supervisors, roles, payroll; global settings (branding, calc parameters, schedules); full visibility.
+* **Admin:** CRUD employees & assignments; read access across their org; generates exports & payroll; cannot change global branding.
+* **Supervisor:** View assigned employees, approve/edit attendance anomalies/incidents for own site(s); create incidents; upload evidence.
+* **User (Employee):** View profile; **Check‑in/Check‑out**; justify absences; view personal weekly report.
+
+> **Visibility:** Fields **Residente/Supervisor** and **Oficina/Obra** (site) determine row‑level visibility. **RLS must restrict** by `auth.uid()` + assignment hierarchy.
+
+---
+
+## 3) Data Model (Supabase)
+
+### 3.1 Core Tables
+
+* **users** (mirrored via **user_profiles** from `auth.users`)
+
+  * `id (uuid, pk)`, `email`, `display_name`, `phone`, `role` (enum: `superadmin|admin|supervisor|user`), `is_active (bool)`, `created_at`
+* **user_profiles**
+
+  * `user_id (fk auth.users)`, `rfc?`, `nss?`, `hourly_rate (numeric)`, `position`, `supervisor_id (fk users)`, `site_id (fk sites)`, `shift_id (fk shifts)`, `photo_url`
+* **sites** (works/offices)
+
+  * `id`, `name`, `address`, `lat`, `lng`, `geofence_radius_m`, `is_active`
+* **shifts** (schedules)
+
+  * `id`, `name`, `start_time`, `end_time`, `break_minutes`, `weekly_days (jsonb)`, `overtime_threshold_daily (min)`, `overtime_threshold_weekly (min)`
+* **attendance** (atomic events)
+
+  * `id`, `user_id`, `site_id`, `type` (`check_in|check_out|break_start|break_end`), `ts (timestamptz)`, `lat`, `lng`, `device_info`, `source (app|whatsapp|web)`, `photo_url?`, `notes`, `anomaly? (jsonb)`
+* **attendance_sessions** (daily consolidated shift)
+
+  * `id`, `user_id`, `site_id`, `date`, `check_in_ts`, `check_out_ts`, `work_minutes`, `break_minutes`, `overtime_minutes`, `status` (`open|closed|needs_review`), `anomalies (jsonb)`
+* **incidents** (late, absence, leave, accident, other)
+
+  * `id`, `user_id`, `site_id`, `category`, `date`, `minutes_impact`, `description`, `attachments (string[])`, `created_by`
+* **payroll_weeks**
+
+  * `id`, `week_start (date)`, `week_end (date)`, `site_id?`, `status` (`draft|approved|exported`), `totals (jsonb)`
+* **payroll_items** (per employee)
+
+  * `id`, `payroll_week_id`, `user_id`, `regular_minutes`, `overtime_minutes`, `bonus (numeric)`, `deductions (numeric)`, `hourly_rate_snapshot`, `total_pay`
+* **audit_logs**
+
+  * `id`, `user_id`, `action`, `entity`, `entity_id`, `before (jsonb)`, `after (jsonb)`, `ts`
+
+### 3.2 Indexes
+
+* `attendance(user_id, ts DESC)`, `attendance_sessions(user_id, date DESC)`
+* `payroll_items(payroll_week_id, user_id)`
+* `incidents(site_id, date DESC)`
+
+### 3.3 Storage
+
+* **/evidence/**: photos for check‑in/out and incident files (PDF/JPG/PNG). Rules: owner + role hierarchy via RLS policies.
+
+---
+
+## 4) RLS (baseline policies)
+
+* **user_profiles**: `SELECT` by owner and hierarchy (Supervisor sees assigned; Admin/SuperAdmin per role). `UPDATE` only by Admin/SuperAdmin; self can `UPDATE` safe fields (photo_url, phone).
+* **attendance**: User can `INSERT`/`SELECT` own. Supervisor can `SELECT` site‑scoped. Admin/SuperAdmin can `SELECT` global. `UPDATE` limited to `status/anomalies` by Supervisor+.
+* **attendance_sessions**: Same as `attendance`. Closing only by system job or Supervisor+.
+* **incidents**: Creator + hierarchy can read; edits by Supervisor+.
+* **payroll_*:** Only Admin/SuperAdmin read/write. Employee may read their `payroll_item` once `approved`.
+* **audit_logs**: Admin/SuperAdmin only.
+
+> Always include `auth.uid()`; cross‑check `site_id` via assignment tables.
+
+---
+
+## 5) Key Flows & Logic
+
+### 5.1 Check‑in / Check‑out
+
+1. User opens **Attendance Screen**.
+2. App requests **geolocation** and (if policy active) **photo** evidence (selfie).
+3. Validate **geofence**: distance to `site.lat/lng` ≤ `geofence_radius_m`. If failed, flag `anomaly: out_of_geofence` and require justification comment.
+4. **Check‑in** → create `attendance(type=check_in)` and open/update `attendance_sessions(status='open')` for `date`.
+5. **Check‑out** → compute `work_minutes`, `break_minutes`, `overtime_minutes` per `shifts` and rules:
+
+   * Daily overtime if `work_minutes` > `overtime_threshold_daily`.
+   * Weekly overtime during payroll consolidation from `attendance_sessions` → `payroll_items`.
+6. Close session with `status='closed'`; append `audit_logs`.
+
+### 5.2 Incidents
+
+* Supervisor/User records incident with **category**, **description**, **evidence**.
+* Payroll impact rules:
+
+  * **late**: subtract minutes from regular.
+  * **leave**: unpaid as per policy.
+  * **accident**: no pay impact; tagged for reports.
+
+### 5.3 Weekly Payroll
+
+1. At week close (`week_start..week_end`), job computes `payroll_items` per user:
+
+   * `regular_minutes` = min(weekly total, policy cap e.g., **40/48h**)
+   * `overtime_minutes` = remainder
+   * `total_pay` = `(regular_minutes/60)*hourly_rate + (overtime_minutes/60)*hourly_rate*overtime_factor` + `bonus` − `deductions`
+2. Admin reviews → `payroll_weeks.status='approved'`.
+3. Export CSV/XLSX and/or send summary via WhatsApp webhook.
+
+### 5.4 WhatsApp Notifications (optional)
+
+* n8n/Make webhook: confirmations on check‑in/out, weekly closure reminders, incident alerts.
+
+---
+
+## 6) Screens, Buttons (UI texts **in Spanish**)
+
+### 6.1 Authentication — `/login`
+
+* Inputs: email + OTP/Password.
+* Buttons: **"Iniciar sesión"**, **"Recuperar acceso"**.
+* Actions: `supabase.auth.signIn` → handle errors → role‑based redirect.
+
+### 6.2 Onboarding — `/onboarding`
+
+* Complete profile: phone, photo, accept policies.
+* Buttons: **"Guardar"**, **"Saltar"**.
+
+### 6.3 Dashboard — `/dashboard` (role‑based)
+
+* **User:** Card **Hoy** (check‑in/out state), worked time, button **"Registrar asistencia"**, latest incidents.
+* **Supervisor:** KPIs **Presentes**, **Retardos**; team table; button **"Nueva incidencia"**.
+* **Admin/SuperAdmin:** KPIs (attendance by site, overtime, incidents); buttons **"Exportar"**, **"Abrir semana"**.
+
+### 6.4 Attendance — `/attendance`
+
+* Buttons: **"Entrar" (Check‑in)**, **"Inicio de descanso"**, **"Fin de descanso"**, **"Salir" (Check‑out)**.
+* Actions: get GPS, validate geofence, capture photo if required, create `attendance`, update `attendance_sessions`.
+* Edge: out‑of‑geofence → justification modal + set `anomaly`.
+
+### 6.5 Team — `/team` (Supervisor/Admin)
+
+* Table with filters (site, supervisor, shift, status).
+* Row quick actions: **Llamar/WhatsApp**, **Ver jornada de hoy**, **Registrar incidencia**.
+
+### 6.6 Employees (CRUD) — `/employees` (Admin+)
+
+* Buttons: **"Nuevo empleado"**, **"Importar CSV"**, **"Exportar"**.
+* Form: name, email, phone, role, supervisor, site, shift, hourly_rate, active.
+
+### 6.7 Sites (CRUD) — `/sites` (Admin+)
+
+* Map + list; **"Nuevo sitio"**.
+* Form: name, address, lat/lng picker, `geofence_radius_m`.
+
+### 6.8 Shifts (CRUD) — `/shifts` (Admin+)
+
+* Form: name, start/end, break, weekly_days, thresholds.
+
+### 6.9 Incidents — `/incidents`
+
+* List with filters; **"Nueva incidencia"** (file upload).
+* Actions: **Aprobar**, **Rechazar**, **Editar** (Supervisor+).
+
+### 6.10 Payroll — `/payroll` (Admin+)
+
+* Week & site selectors.
+* Table of `payroll_items` with **bonus/deductions** editing.
+* Buttons: **"Recalcular"**, **"Aprobar semana"**, **"Exportar CSV/XLSX"**.
+
+### 6.11 Settings — `/settings`
+
+* Branding (logo/colors) — SuperAdmin only.
+* Parameters: overtime factor, lateness tolerance, geofence required (on/off).
+
+### 6.12 Reports — `/reports`
+
+* Attendance by site/date, overtime, incidents, punctuality.
+* Button: **"Exportar"**.
+
+---
+
+## 7) Services (data layer)
+
+**Convention:** return `{ ok, data, error, code }`.
+
+* `authService.login({ email, password|otp })`
+* `userService.getMe()`, `userService.updateProfile(partial)`
+* `employeeService.list({ q, site_id, supervisor_id, page })`, `create`, `update`, `remove`
+* `siteService.list()`, `create`, `update`, `remove`
+* `shiftService.list()`, `create`, `update`, `remove`
+* `attendanceService.checkIn({ site_id, lat, lng, photo })`
+* `attendanceService.breakStart()`, `breakEnd()`
+* `attendanceService.checkOut({ lat, lng, photo })`
+* `attendanceService.listSessions({ user_id?, date_from, date_to, page })`
+* `incidentService.create({ user_id, site_id, category, description, files[] })`
+* `payrollService.recalculateWeek({ week_start, site_id? })`
+* `exportService.csv({ entity, filters })`, `xlsx(...)`
+* `webhookService.notify({ type, payload })`
+
+> Implement **supaCache** (`selectCached(fetcher, { ttlMs })`) with inflight dedupe to avoid duplicate selects.
+
+---
+
+## 8) State, Cache & Sync
+
+* TanStack Query for remote state; cache keys by entity + filters.
+* Invalidate caches after create/update/delete.
+* Optional Realtime on `attendance` for live dashboards.
+* LocalStorage draft persistence for long forms.
+
+---
+
+## 9) Validations & UX (Spanish UI)
+
+* **GPS/Geofence:** request permissions, show distance to site; warning on poor accuracy.
+* **Photos:** enforce on check‑in/out if policy enabled.
+* **Accessibility:** touch targets ≥44px, contrast AA.
+* Clear empty states and error messages (Spanish).
+
+---
+
+## 10) Security
+
+* **RLS everywhere** (see §4); server is source of truth.
+* Never expose service keys in frontend.
+* Role checks in UI + enforced by RLS.
+* File uploads: validate type/size; signed URLs; path format `userId/date/uuid.ext`.
+* Audit sensitive actions in `audit_logs`.
+
+---
+
+## 11) Performance
+
+* Pagination for tables >50 rows.
+* Route‑level code splitting.
+* Memoization for heavy lists.
+* Proper image sizing and `object-fit`.
+
+---
+
+## 12) Minimum Testing
+
+* **Unit:** time helpers (overtime calc), geofence validators.
+* **E2E (Playwright):** login → check‑in → check‑out → payroll approval.
+
+---
+
+## 13) Deployment
+
+* Multi‑stage Dockerfile (build → nginx), nginx with gzip/brotli.
+* `.env`: Supabase URLs, anon key, map API key (if any), `TZ=America/Monterrey`.
+* Healthcheck endpoint `/health` returns 200.
+
+---
+
+## 14) Observability
+
+* Lightweight logger (levels info|warn|error) including `user_id` and `action`.
+* Send errors to Sentry or remote console.
+
+---
+
+## 15) Edge Cases
+
+* Check‑in with no assigned site → block and prompt Supervisor assignment.
+* Double check‑in same day → close previous or mark `needs_review`.
+* Missing check‑out at day end → nightly autoclose using `shift.end`.
+* GPS accuracy > threshold (e.g., >100m) → require photo + justification.
+
+---
+
+## 16) Routes & Components (React)
+
+* Routes: `/login`, `/onboarding`, `/dashboard`, `/attendance`, `/team`, `/employees`, `/sites`, `/shifts`, `/incidents`, `/payroll`, `/reports`, `/settings`.
+* Components: `GeoMap`, `PhotoCapture`, `KpiCard`, `DataTable`, `RoleGuard`, `SitePicker`, `WeekSelector`.
+
+---
+
+## 17) Review/Optimization Checklist (for Replit)
+
+1. All routes compile and render without errors.
+2. **RLS** verified per role (User ⟶ Supervisor ⟶ Admin ⟶ SuperAdmin).
+3. Check‑in/out validates geofence and saves evidence correctly.
+4. Payroll math consistent with thresholds and shifts.
+5. Exports produce valid CSV/XLSX.
+6. Uploads obey permissions; signed URLs only.
+7. **supaCache** prevents duplicate selects; no request storms.
+8. Errors show helpful Spanish messages; actions logged in `audit_logs`.
+9. `.env` and `TZ` set; Docker build is deterministic.
+10. Role‑based UX and basic accessibility.
+
+---
+
+## 18) Optional SQL RPC Endpoints
+
+* `rpc.calculate_payroll_week(week_start date, site_id uuid)` → populate `payroll_items` for that week.
+* `rpc.autoclose_sessions(date)` → close open daily sessions.
+
+---
+
+## 19) Tunable Parameters
+
+* `overtime_factor (1.5|2.0)`, `geofence_required (bool)`, `max_gps_accuracy_m`, `late_tolerance_min`, `break_minutes_default`.
+
+---
+
+## 20) De‑mocking & Hardcoded Cleanup (MUST‑FIX)
+
+* **Remove all mocks and hardcoded data** across the repo:
+
+  * Delete mock services, stub repositories, sample JSON used at runtime, and any in‑component mock arrays/objects.
+  * Purge hardcoded IDs, tokens, keys (e.g., site_id, user_id, role, JWTs, Supabase keys) from code and configs.
+  * Replace dev placeholders with typed service calls to Supabase (via the services layer) and seed scripts for local/dev data.
+* **Configuration correctness:**
+
+  * Use `.env` only (no inline constants). Required envs: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, optional `VITE_MAP_API_KEY`, `TZ`.
+  * Add a runtime config guard: the app fails fast with a clear Spanish error if required envs are missing.
+* **Data seeding (dev):**
+
+  * Provide `scripts/seed.ts` (or SQL) to create demo sites, shifts, and users with RLS‑safe relationships. No mocks inside UI components.
+* **Testing and fixtures:**
+
+  * Unit/E2E must rely on test fixtures/factories, not production mocks baked into UI code.
+  * Playwright seeds/cleans via API or SQL before/after tests.
+* **CI safety net:**
+
+  * Add a CI step to scan for common mock patterns and fail the build if found. Search terms: `MOCK_`, `FAKE_`, `HARDCODED_`, `TODO: remove mock`, `const sample`, `export const MOCK`, `mock`, `fixtures/runtime`, `data-mock`.
+* **Runtime sanity checks:**
+
+  * In non‑dev builds, assert that no mock endpoints are referenced and services point to Supabase.
+* **Feature flags (optional):**
+
+  * If a demo mode is required, implement via explicit `VITE_DEMO_MODE` feature flag that pulls read‑only data from a demo schema — not from embedded mocks.
+
+## 21) Final Notes
+
+* Prioritize **RLS and security** over UI validation.
+* Document architectural decisions in README; add **seed scripts** (demo sites, shifts, test users).
+* Keep consistent naming in services and TanStack Query keys (e.g., `['attendance','sessions',userId,week]`).
