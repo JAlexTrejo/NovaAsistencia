@@ -98,9 +98,54 @@ export async function uploadFavicon(file, keyPrefix = 'favicons') {
   }
 }
 
+/** Get public branding settings (for BrandingProvider) */
+export async function getPublicBrandingSettings() {
+  const result = await getBranding();
+  if (!result?.ok || !result?.data) {
+    return null;
+  }
+  
+  const data = result.data;
+  return {
+    nombre_empresa: data?.brand_name || 'AsistenciaPro',
+    logo_url: data?.logo_url || null,
+    color_primario: data?.primary_color || '#3B82F6',
+    color_secundario: data?.secondary_color || '#10B981',
+    moneda: 'MXN',
+    simbolo_moneda: '$',
+    mensaje_bienvenida: 'Sistema de gestión de asistencia y recursos humanos'
+  };
+}
+
+/** Apply branding settings to the UI */
+export function applyBrandingSettings(settings) {
+  if (settings?.color_primario) {
+    document.documentElement.style.setProperty('--color-primary', settings.color_primario);
+  }
+  if (settings?.color_secundario) {
+    document.documentElement.style.setProperty('--color-secondary', settings.color_secundario);
+  }
+}
+
+/** Format currency */
+export function formatCurrency(amount, options = {}) {
+  const { code = 'MXN', symbol = '$' } = options;
+  const numAmount = typeof amount === 'number' ? amount : parseFloat(amount) || 0;
+  
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: code,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(numAmount);
+}
+
 export default {
   getBranding,
   upsertBranding,
   uploadLogo,
   uploadFavicon,
+  getPublicBrandingSettings,
+  applyBrandingSettings,
+  formatCurrency,
 };
