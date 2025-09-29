@@ -83,7 +83,6 @@ export default defineConfig(async ({ mode }) => {
       host: '0.0.0.0',
       strictPort: false,
       hmr: {
-        protocol: 'ws',
         overlay: true,
       },
       allowedHosts: true,
