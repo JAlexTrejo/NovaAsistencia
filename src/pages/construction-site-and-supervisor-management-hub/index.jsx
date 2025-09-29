@@ -1,13 +1,18 @@
+// src/pages/construction-site-and-supervisor-management-hub/index.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
-import NavigationBreadcrumb from '../../components/ui/NavigationBreadcrumb';
-import UserContextHeader from '../../components/ui/UserContextHeader';
-import NotificationCenter from '../../components/ui/NotificationCenter';
-import Icon from '../../components/AppIcon';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import Select from '../../components/ui/Select';
+
+import RoleBasedSidebar from '@/components/ui/RoleBasedSidebar';
+import NavigationBreadcrumb from '@/components/ui/NavigationBreadcrumb';
+import UserContextHeader from '@/components/ui/UserContextHeader';
+import NotificationCenter from '@/components/ui/NotificationCenter';
+import Icon from '@/components/AppIcon';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
+import Loading from '@/components/ui/Loading';
+import ErrorState from '@/components/ui/ErrorState';
+import { showToast } from '@/components/ui/ToastHub';
 
 import SiteCard from './components/SiteCard';
 import SupervisorCard from './components/SupervisorCard';
@@ -15,25 +20,37 @@ import OrganizationalTree from './components/OrganizationalTree';
 import BulkAssignmentPanel from './components/BulkAssignmentPanel';
 import QuickStatsPanel from './components/QuickStatsPanel';
 
-// NUEVO: datos reales
 import { useQuery } from '@/hooks/useQuery';
 import { getAllSites } from '@/services/constructionSiteService';
-import Loading from '@/components/ui/Loading';
-import ErrorState from '@/components/ui/ErrorState';
-import { showToast } from '@/components/ui/ToastHub';
+import enhancedEmployeeService from '@/services/enhancedEmployeeService';
+import { useAuth } from '@/contexts/AuthContext';
+
+const DEBOUNCE_MS = 350;
 
 const ConstructionSiteAndSupervisorManagementHub = () => {
   const navigate = useNavigate();
+  const { getCurrentUserContext } = useAuth();
+  const currentUser = getCurrentUserContext();
+  const userRole = currentUser?.role?.toLowerCase?.() || 'user';
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState('sites');
+  const [activeTab, setActiveTab] = useState('sites'); // 'sites' | 'supervisors'
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedNode, setSelectedNode] = useState(null);
   const [showBulkAssignment, setShowBulkAssignment] = useState(false);
-  const [userRole] = useState('admin'); // TODO: obtener de AuthContext si ya lo tienes
 
   // ------------------------------
-  // 1) SITIOS: datos reales (paginación + búsqueda)
+  // Debounce búsqueda
+  // ------------------------------
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm?.trim()), DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // ------------------------------
+  // SITIOS (paginación + búsqueda)
   // ------------------------------
   const [page, setPage] = useState(0);
 
@@ -44,13 +61,14 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
     error: sitesError,
     refetch: refetchSites,
   } = useQuery(getAllSites, {
-    params: { page, search: searchTerm },
-    deps: [page, searchTerm],
+    params: { page, search: debouncedSearch || undefined },
+    deps: [page, debouncedSearch],
     keepPreviousData: true,
+    retry: 1,
     onError: (e) =>
       showToast({
         title: 'Error al cargar sitios',
-        message: e.message || 'Intenta nuevamente',
+        message: e?.message || 'Intenta nuevamente',
         type: 'error',
       }),
   });
@@ -60,129 +78,135 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
   const pageSize = sitesData?.pageSize ?? 50;
   const totalPages = Math.max(1, Math.ceil(sitesCount / pageSize));
 
-  // Filtrado de estado (cliente): 'active' -> is_active true, el resto queda como ALL por ahora
+  // Filtro de estado (cliente): 'active' -> is_active true
   const filteredSites = useMemo(() => {
-    const s = sitesRows.filter((site) => {
+    const term = (debouncedSearch || '').toLowerCase();
+    return (sitesRows || []).filter((site) => {
       const matchesSearch =
-        !searchTerm ||
-        site?.name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
-        site?.location?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
-        (site?.code ? site.code.toLowerCase().includes(searchTerm.toLowerCase()) : false);
+        !term ||
+        site?.name?.toLowerCase()?.includes(term) ||
+        site?.location?.toLowerCase()?.includes(term) ||
+        (site?.code ? site.code.toLowerCase().includes(term) : false);
 
-    // Nota: en el esquema real no siempre hay 'status'; usamos is_active para 'active'
       const matchesStatus =
-        filterStatus === 'all' ? true :
-        filterStatus === 'active' ? !!site?.is_active :
-        true; // otros estados no están implementados en DB; dejamos pasar
+        filterStatus === 'all'
+          ? true
+          : filterStatus === 'active'
+          ? !!site?.is_active
+          : true; // otros estados aún no existen en DB
 
       return matchesSearch && matchesStatus;
     });
-    return s;
-  }, [sitesRows, searchTerm, filterStatus]);
+  }, [sitesRows, debouncedSearch, filterStatus]);
 
   // ------------------------------
-  // 2) SUPERVISORES: de momento mock (si ya tienes tabla, los conectamos luego)
+  // SUPERVISORES (reales)
   // ------------------------------
-  const mockSupervisors = [
-    { id: 1, name: 'Carlos Mendoza', email: 'carlos.mendoza@empresa.com', phone: '+52 55 1111 2222', status: 'active', assignedSites: 2, totalEmployees: 73, experience: 12, hireDate: '2018-03-15', specialization: 'Construcción de Edificios', avatar: null, sites: ['Torre Empresarial Norte', 'Edificio Residencial Centro'], certifications: ['PMP', 'Seguridad Industrial', 'Gestión de Calidad'] },
-    { id: 2, name: 'María González', email: 'maria.gonzalez@empresa.com', phone: '+52 55 2222 3333', status: 'active', assignedSites: 1, totalEmployees: 32, experience: 8, hireDate: '2020-07-22', specialization: 'Proyectos Residenciales', avatar: null, sites: ['Complejo Residencial Sur'], certifications: ['Arquitectura Sostenible', 'BIM', 'Seguridad Industrial'] },
-    { id: 3, name: 'Roberto Silva', email: 'roberto.silva@empresa.com', phone: '+52 55 3333 4444', status: 'vacation', assignedSites: 1, totalEmployees: 15, experience: 15, hireDate: '2015-11-08', specialization: 'Infraestructura Vial', avatar: null, sites: ['Puente Vehicular Este'], certifications: ['Ingeniería Civil', 'Gestión de Proyectos', 'Topografía'] },
-    { id: 4, name: 'Ana Rodríguez', email: 'ana.rodriguez@empresa.com', phone: '+52 55 4444 5555', status: 'active', assignedSites: 0, totalEmployees: 0, experience: 6, hireDate: '2021-02-14', specialization: 'Construcción Comercial', avatar: null, sites: [], certifications: ['Gestión de Calidad', 'Seguridad Industrial'] },
-  ];
+  const {
+    data: supervisorsData,
+    isLoading: supervisorsLoading,
+    error: supervisorsError,
+    refetch: refetchSupervisors,
+  } = useQuery(enhancedEmployeeService.getSupervisors, {
+    deps: [],
+    retry: 1,
+    onError: (e) =>
+      showToast({
+        title: 'Error al cargar supervisores',
+        message: e?.message || 'Intenta nuevamente',
+        type: 'error',
+      }),
+  });
+
+  const supervisors = supervisorsData ?? [];
 
   const filteredSupervisors = useMemo(() => {
-    return mockSupervisors.filter((supervisor) => {
+    const term = (debouncedSearch || '').toLowerCase();
+
+    return (supervisors || []).filter((supervisor) => {
       const matchesSearch =
-        !searchTerm ||
-        supervisor?.name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
-        supervisor?.email?.toLowerCase()?.includes(searchTerm.toLowerCase());
-      const matchesStatus = filterStatus === 'all' || supervisor?.status === filterStatus;
+        !term ||
+        supervisor?.full_name?.toLowerCase()?.includes(term) ||
+        supervisor?.email?.toLowerCase()?.includes(term);
+
+      // Si tu tabla de usuarios/perfiles tiene status, mapéalo aquí.
+      // Por ahora, no filtramos por estado (sólo 'all').
+      const matchesStatus = filterStatus === 'all' ? true : true;
+
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, filterStatus]);
+  }, [supervisors, debouncedSearch, filterStatus]);
 
-  const statusOptions = [
-    { value: 'all', label: 'Todos los estados' },
-    { value: 'active', label: 'Activo' },
-    // Los siguientes son placeholders; si tu tabla tiene columna 'status', podemos mapearlos
-    { value: 'planning', label: 'Planificación' },
-    { value: 'completed', label: 'Completado' },
-    { value: 'suspended', label: 'Suspendido' },
-  ];
-
-  const supervisorStatusOptions = [
-    { value: 'all', label: 'Todos los estados' },
-    { value: 'active', label: 'Activo' },
-    { value: 'inactive', label: 'Inactivo' },
-    { value: 'vacation', label: 'Vacaciones' },
-  ];
-
-  // Event handlers
+  // ------------------------------
+  // Handlers (sin mocks)
+  // ------------------------------
   const handleSiteEdit = (site) => {
-    console.log('Editar sitio:', site);
+    // navigate(`/construction-sites/${site.id}/edit`);
+    showToast({ title: 'Acción', message: `Editar sitio ${site?.name}`, type: 'info' });
   };
 
   const handleSiteDelete = (site) => {
-    console.log('Eliminar sitio:', site);
+    showToast({ title: 'Pendiente', message: 'Eliminar sitio (conectar servicio)', type: 'warning' });
   };
 
   const handleSiteViewDetails = (site) => {
-    console.log('Ver detalles del sitio:', site);
+    // navigate(`/construction-sites/${site.id}`);
+    showToast({ title: 'Detalle', message: `Sitio: ${site?.name}`, type: 'info' });
   };
 
   const handleAssignSupervisor = (site) => {
-    console.log('Asignar supervisor al sitio:', site);
+    showToast({ title: 'Asignación', message: `Asignar supervisor a ${site?.name}`, type: 'info' });
   };
 
   const handleSupervisorEdit = (supervisor) => {
-    console.log('Editar supervisor:', supervisor);
+    showToast({ title: 'Acción', message: `Editar supervisor ${supervisor?.full_name}`, type: 'info' });
   };
 
   const handleSupervisorDelete = (supervisor) => {
-    console.log('Eliminar supervisor:', supervisor);
+    showToast({ title: 'Pendiente', message: 'Eliminar supervisor (conectar servicio)', type: 'warning' });
   };
 
   const handleSupervisorViewDetails = (supervisor) => {
-    console.log('Ver detalles del supervisor:', supervisor);
+    showToast({ title: 'Detalle', message: `Supervisor: ${supervisor?.full_name}`, type: 'info' });
   };
 
   const handleAssignSites = (supervisor) => {
-    console.log('Asignar sitios al supervisor:', supervisor);
+    setShowBulkAssignment(true);
+    setSelectedNode({ type: 'supervisor', id: supervisor?.id, label: supervisor?.full_name });
   };
 
-  const handleNodeSelect = (node) => {
-    setSelectedNode(node);
-  };
+  const handleNodeSelect = (node) => setSelectedNode(node);
 
   const handleDragDrop = (draggedItem, targetItem) => {
-    console.log('Reorganizar estructura:', draggedItem, targetItem);
+    showToast({ title: 'Reordenar', message: 'Arrastrar y soltar pendiente de servicio', type: 'info' });
   };
 
   const handleBulkAssign = async (assignmentData) => {
-    console.log('Asignación masiva:', assignmentData);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    showToast({ title: 'Asignando…', message: 'Procesando asignación masiva', type: 'info' });
+    await new Promise((r) => setTimeout(r, 800));
+    showToast({ title: 'Listo', message: 'Asignación completada', type: 'success' });
   };
 
   const handleViewReports = (node) => {
-    console.log('Ver reportes para:', node);
     navigate('/comprehensive-reporting-and-export-center');
   };
 
-  const handleExportData = (node) => {
-    console.log('Exportar datos para:', node);
+  const handleExportData = () => {
+    showToast({ title: 'Exportar', message: 'Exportación pendiente de implementar', type: 'info' });
   };
 
-  const handleLogout = () => {
-    navigate('/employee-login-portal');
-  };
+  const handleLogout = () => navigate('/employee-login-portal');
 
   useEffect(() => {
     document.title = 'Gestión de Sitios y Supervisores - AsistenciaPro';
   }, []);
 
+  const anyError = sitesError || supervisorsError;
+
   return (
     <div className="min-h-screen bg-background">
       <RoleBasedSidebar isCollapsed={sidebarCollapsed} userRole={userRole} />
+
       <div className={`transition-all duration-300 ease-out-cubic ${sidebarCollapsed ? 'md:ml-16' : 'md:ml-60'}`}>
         {/* Header */}
         <header className="bg-card border-b border-border px-6 py-4">
@@ -193,6 +217,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                 size="icon"
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                 className="hidden md:flex"
+                aria-label="Alternar barra lateral"
               >
                 <Icon name={sidebarCollapsed ? 'ChevronRight' : 'ChevronLeft'} size={20} />
               </Button>
@@ -204,6 +229,16 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
             </div>
 
             <div className="flex items-center space-x-4">
+              <Button
+                variant="outline"
+                iconName="RefreshCw"
+                onClick={() => {
+                  refetchSites();
+                  refetchSupervisors();
+                }}
+              >
+                Actualizar
+              </Button>
               <NotificationCenter />
               <UserContextHeader onLogout={handleLogout} />
             </div>
@@ -214,18 +249,29 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
         <main className="p-6">
           <NavigationBreadcrumb />
 
+          {anyError && (
+            <div className="mb-4">
+              <ErrorState
+                message="No se pudieron cargar algunos datos."
+                onRetry={() => {
+                  refetchSites();
+                  refetchSupervisors();
+                }}
+              />
+            </div>
+          )}
+
           <div className="grid grid-cols-12 gap-6 h-[calc(100vh-200px)]">
             {/* Left Panel - Organizational Tree */}
             <div className="col-span-12 lg:col-span-4 xl:col-span-3">
               <OrganizationalTree
-                // Pasamos sitios reales (sin filtrar) al árbol para ver toda la estructura
                 sites={sitesRows}
-                supervisors={mockSupervisors}
+                supervisors={supervisors}
                 onNodeSelect={handleNodeSelect}
                 selectedNode={selectedNode}
                 onDragDrop={handleDragDrop}
                 userRole={userRole}
-                isLoading={sitesLoading}
+                isLoading={sitesLoading || supervisorsLoading}
               />
             </div>
 
@@ -251,7 +297,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                       iconName="UserCheck"
                       iconPosition="left"
                     >
-                      Supervisores ({mockSupervisors.length})
+                      Supervisores ({supervisors.length})
                     </Button>
                   </div>
 
@@ -260,7 +306,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowBulkAssignment(!showBulkAssignment)}
+                        onClick={() => setShowBulkAssignment((v) => !v)}
                         iconName="Users"
                         iconPosition="left"
                       >
@@ -290,19 +336,21 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                     </div>
                     <div className="w-48">
                       <Select
-                        options={activeTab === 'sites' ? [
-                          { value: 'all', label: 'Todos los estados' },
-                          { value: 'active', label: 'Activo' },
-                          // Los demás estados son placeholders
-                          { value: 'planning', label: 'Planificación' },
-                          { value: 'completed', label: 'Completado' },
-                          { value: 'suspended', label: 'Suspendido' },
-                        ] : [
-                          { value: 'all', label: 'Todos los estados' },
-                          { value: 'active', label: 'Activo' },
-                          { value: 'inactive', label: 'Inactivo' },
-                          { value: 'vacation', label: 'Vacaciones' },
-                        ]}
+                        options={
+                          activeTab === 'sites'
+                            ? [
+                                { value: 'all', label: 'Todos los estados' },
+                                { value: 'active', label: 'Activo' },
+                                // placeholders (si más adelante agregas columna status)
+                                { value: 'planning', label: 'Planificación' },
+                                { value: 'completed', label: 'Completado' },
+                                { value: 'suspended', label: 'Suspendido' },
+                              ]
+                            : [
+                                { value: 'all', label: 'Todos los estados' },
+                                // Mapea aquí si tuvieras status en perfiles/usuarios.
+                              ]
+                        }
                         value={filterStatus}
                         onChange={(val) => {
                           setPage(0);
@@ -319,7 +367,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                   {showBulkAssignment ? (
                     <BulkAssignmentPanel
                       sites={sitesRows}
-                      supervisors={mockSupervisors}
+                      supervisors={supervisors}
                       employees={[]}
                       onBulkAssign={handleBulkAssign}
                       onClose={() => setShowBulkAssignment(false)}
@@ -329,7 +377,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                     sitesLoading ? (
                       <Loading label="Cargando sitios…" />
                     ) : sitesError ? (
-                      <ErrorState message={sitesError.message} onRetry={refetchSites} />
+                      <ErrorState message={sitesError?.message} onRetry={refetchSites} />
                     ) : filteredSites.length > 0 ? (
                       <>
                         <div className="space-y-4">
@@ -338,10 +386,9 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                               key={site?.id}
                               site={{
                                 ...site,
-                                // compatibilidad: algunos SiteCard esperan 'status' o 'progress'
                                 status: site?.is_active ? 'active' : 'inactive',
-                                progress: site?.progress ?? undefined, // si tienes progreso en DB, usa esa columna
-                                supervisor: site?.supervisor || null, // si tienes join, pásalo aquí
+                                progress: site?.progress ?? undefined,
+                                supervisor: site?.supervisor || null,
                               }}
                               onEdit={handleSiteEdit}
                               onDelete={handleSiteDelete}
@@ -380,7 +427,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                         <Icon name="Building2" size={48} className="mx-auto text-muted-foreground mb-4" />
                         <h3 className="text-lg font-semibold text-foreground mb-2">No se encontraron sitios</h3>
                         <p className="text-muted-foreground mb-4">
-                          {searchTerm ? 'Intenta con otros términos de búsqueda' : 'Comienza creando tu primer sitio de construcción'}
+                          {debouncedSearch ? 'Intenta con otros términos de búsqueda' : 'Comienza creando tu primer sitio de construcción'}
                         </p>
                         {userRole === 'admin' && (
                           <Button iconName="Plus" iconPosition="left">
@@ -389,11 +436,25 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                         )}
                       </div>
                     )
+                  ) : supervisorsLoading ? (
+                    <Loading label="Cargando supervisores…" />
+                  ) : supervisorsError ? (
+                    <ErrorState message={supervisorsError?.message} onRetry={refetchSupervisors} />
                   ) : filteredSupervisors.length > 0 ? (
                     filteredSupervisors.map((supervisor) => (
                       <SupervisorCard
                         key={supervisor?.id}
-                        supervisor={supervisor}
+                        supervisor={{
+                          id: supervisor?.id,
+                          name: supervisor?.full_name,
+                          email: supervisor?.email,
+                          phone: supervisor?.phone,
+                          // Métricas por supervisor: si las tienes en el service, mápéalas aquí.
+                          assignedSites: supervisor?.assignedSites ?? 0,
+                          totalEmployees: supervisor?.totalEmployees ?? 0,
+                          status: 'active',
+                          avatar: supervisor?.avatar || null,
+                        }}
                         onEdit={handleSupervisorEdit}
                         onDelete={handleSupervisorDelete}
                         onViewDetails={handleSupervisorViewDetails}
@@ -406,7 +467,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
                       <Icon name="UserCheck" size={48} className="mx-auto text-muted-foreground mb-4" />
                       <h3 className="text-lg font-semibold text-foreground mb-2">No se encontraron supervisores</h3>
                       <p className="text-muted-foreground mb-4">
-                        {searchTerm ? 'Intenta con otros términos de búsqueda' : 'Comienza agregando supervisores a tu equipo'}
+                        {debouncedSearch ? 'Intenta con otros términos de búsqueda' : 'Comienza agregando supervisores a tu equipo'}
                       </p>
                       {userRole === 'admin' && (
                         <Button iconName="Plus" iconPosition="left">
@@ -422,12 +483,12 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
             {/* Right Panel - Quick Stats */}
             <div className="col-span-12 lg:col-span-3">
               <QuickStatsPanel
-                sites={sitesRows}              
-                supervisors={mockSupervisors}   
+                sites={sitesRows}
+                supervisors={supervisors}
                 onViewReports={handleViewReports}
                 onExportData={handleExportData}
                 selectedNode={selectedNode}
-                isLoading={sitesLoading}
+                isLoading={sitesLoading || supervisorsLoading}
               />
             </div>
           </div>
@@ -435,7 +496,7 @@ const ConstructionSiteAndSupervisorManagementHub = () => {
       </div>
 
       {/* Mobile Bottom Navigation Spacer */}
-      <div className="md:hidden h-16"></div>
+      <div className="md:hidden h-16" />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
 import NavigationBreadcrumb from '../../components/ui/NavigationBreadcrumb';
 import UserContextHeader from '../../components/ui/UserContextHeader';
@@ -9,197 +9,176 @@ import IncidentHistoryGrid from './components/IncidentHistoryGrid';
 import IncidentAnalyticsDashboard from './components/IncidentAnalyticsDashboard';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
+import { useAuth } from '../../contexts/AuthContext';
+import { incidentService } from '../../services/incidentService';
 
 const IncidentRegistrationAndManagementSystem = () => {
-  const [currentUser] = useState({
-    id: 1,
-    name: 'Carlos Mendoza',
-    role: 'Supervisor',
-    site: 'Obra Central',
-    avatar: null
-  });
+  const { userProfile } = useAuth();
+
+  const currentUser = useMemo(
+    () => ({
+      id: userProfile?.id,
+      name: userProfile?.full_name || 'Usuario',
+      role:
+        userProfile?.role === 'superadmin'
+          ? 'SuperAdmin'
+          : userProfile?.role === 'admin'
+          ? 'Admin'
+          : userProfile?.role === 'supervisor'
+          ? 'Supervisor'
+          : 'Employee',
+      site: '—',
+      avatar: null,
+    }),
+    [userProfile]
+  );
 
   const [activeTab, setActiveTab] = useState('create');
+
+  // estado de datos
   const [incidents, setIncidents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Mock incidents data
-  const mockIncidents = [
-    {
-      id: 1,
-      employeeId: 2,
-      employeeName: 'María González',
-      site: 'Obra Central',
-      type: 'medical',
-      reason: 'illness',
-      startDate: '2025-01-03',
-      endDate: '2025-01-05',
-      description: 'Incapacidad médica por gripe. Adjunto certificado médico que indica reposo de 3 días. El médico recomienda evitar actividades físicas intensas.',
-      status: 'pending',
-      priority: 'high',
-      submittedAt: new Date('2025-01-02T08:30:00'),
-      attachments: [
-        { id: 1, name: 'certificado_medico.pdf', size: 245760, type: 'application/pdf' },
-        { id: 2, name: 'receta_medica.jpg', size: 156432, type: 'image/jpeg' }
-      ],
-      isUrgent: true,
-      notifyHR: true
-    },
-    {
-      id: 2,
-      employeeId: 3,
-      employeeName: 'Roberto Silva',
-      site: 'Proyecto Norte',
-      type: 'tardiness',
-      reason: 'transportation',
-      startDate: '2025-01-02',
-      endDate: null,
-      description: 'Llegada tardía debido a problemas con el transporte público. El autobús se averió en la ruta y tuve que esperar el siguiente servicio.',
-      status: 'approved',
-      priority: 'normal',
-      submittedAt: new Date('2025-01-02T09:15:00'),
-      attachments: [],
-      isUrgent: false,
-      notifyHR: false
-    },
-    {
-      id: 3,
-      employeeId: 4,
-      employeeName: 'Ana Rodríguez',
-      site: 'Edificio Sur',
-      type: 'permit',
-      reason: 'family_emergency',
-      startDate: '2025-01-04',
-      endDate: '2025-01-04',
-      description: 'Solicito permiso por emergencia familiar. Mi madre fue hospitalizada y necesito acompañarla durante los procedimientos médicos.',
-      status: 'pending',
-      priority: 'high',
-      submittedAt: new Date('2025-01-03T14:20:00'),
-      attachments: [
-        { id: 3, name: 'comprobante_hospital.pdf', size: 189234, type: 'application/pdf' }
-      ],
-      isUrgent: true,
-      notifyHR: true
-    },
-    {
-      id: 4,
-      employeeId: 5,
-      employeeName: 'Luis Martínez',
-      site: 'Obra Central',
-      type: 'absence',
-      reason: 'personal_matters',
-      startDate: '2024-12-28',
-      endDate: '2024-12-30',
-      description: 'Ausencia por asuntos personales urgentes. Necesito resolver trámites legales que no pueden posponerse.',
-      status: 'rejected',
-      priority: 'normal',
-      submittedAt: new Date('2024-12-27T16:45:00'),
-      attachments: [],
-      isUrgent: false,
-      notifyHR: false,
-      rejectionReason: 'Falta de documentación de soporte'
-    },
-    {
-      id: 5,
-      employeeId: 6,
-      employeeName: 'Carmen López',
-      site: 'Proyecto Norte',
-      type: 'training',
-      reason: 'other',
-      startDate: '2025-01-06',
-      endDate: '2025-01-08',
-      description: 'Capacitación en seguridad industrial requerida por la empresa. El curso incluye certificación en manejo de equipos pesados.',
-      status: 'approved',
-      priority: 'normal',
-      submittedAt: new Date('2024-12-30T10:00:00'),
-      attachments: [
-        { id: 4, name: 'programa_capacitacion.pdf', size: 312456, type: 'application/pdf' }
-      ],
-      isUrgent: false,
-      notifyHR: true
-    },
-    {
-      id: 6,
-      employeeId: 7,
-      employeeName: 'Diego Herrera',
-      site: 'Edificio Sur',
-      type: 'emergency',
-      reason: 'family_emergency',
-      startDate: '2025-01-01',
-      endDate: null,
-      description: 'Emergencia familiar por fallecimiento de familiar directo. Requiero tiempo para arreglos funerarios y trámites legales.',
-      status: 'approved',
-      priority: 'high',
-      submittedAt: new Date('2024-12-31T22:30:00'),
-      attachments: [
-        { id: 5, name: 'acta_defuncion.pdf', size: 198765, type: 'application/pdf' }
-      ],
-      isUrgent: true,
-      notifyHR: true
-    }
-  ];
+  // filtros/paginación (ajústalos si tus subcomponentes ya traen internos)
+  const [queueStatus] = useState('pending'); // para cola
+  const [historyStatus, setHistoryStatus] = useState('all'); // para historial
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyPageSize] = useState(20);
+  const [historyTotal, setHistoryTotal] = useState(0);
 
+  // --------- CARGA INICIAL: cola + historial ----------
   useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setIncidents(mockIncidents);
-      setIsLoading(false);
-    }, 1000);
+    let mounted = true;
 
-    return () => clearTimeout(timer);
-  }, []);
+    const bootstrap = async () => {
+      try {
+        setIsLoading(true);
 
-  const handleSubmitIncident = async (incidentData) => {
+        // Cargar cola (pendientes)
+        const queueRes = await incidentService.listIncidents({
+          status: queueStatus, // 'pending'
+          page: 0,
+          pageSize: 50,
+        });
+
+        // Cargar historial (todos o por filtro)
+        const histRes = await incidentService.listIncidents({
+          status: historyStatus === 'all' ? undefined : historyStatus,
+          page: historyPage,
+          pageSize: historyPageSize,
+        });
+
+        if (!mounted) return;
+
+        // fusión simple: puedes separar estados si tus componentes lo requieren
+        // aquí mantenemos un único arreglo y filtramos al mostrar
+        const merged = [
+          ...(queueRes?.data?.rows || []),
+          ...(histRes?.data?.rows || []),
+        ];
+        // si quieres evitar duplicados por id
+        const uniqueById = Object.values(
+          merged.reduce((acc, it) => {
+            acc[it.id] = it;
+            return acc;
+          }, {})
+        );
+
+        setIncidents(uniqueById);
+        setHistoryTotal(histRes?.data?.count || 0);
+      } catch (e) {
+        console.error('Error loading incidents:', e);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    bootstrap();
+    return () => {
+      mounted = false;
+    };
+  }, [queueStatus, historyStatus, historyPage, historyPageSize]);
+
+  // --------- UTIL: recargar datos (por ejemplo tras crear/aprobar/rechazar) ----------
+  const reload = async () => {
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      setIncidents(prev => [incidentData, ...prev]);
-      setActiveTab('queue'); // Switch to queue tab after submission
-      
-      // Show success notification (would be handled by notification system)
-      console.log('Incident submitted successfully:', incidentData);
-    } catch (error) {
-      console.error('Error submitting incident:', error);
-      throw error;
+      setIsLoading(true);
+      const [queueRes, histRes] = await Promise.all([
+        incidentService.listIncidents({
+          status: queueStatus,
+          page: 0,
+          pageSize: 50,
+        }),
+        incidentService.listIncidents({
+          status: historyStatus === 'all' ? undefined : historyStatus,
+          page: historyPage,
+          pageSize: historyPageSize,
+        }),
+      ]);
+
+      const merged = [
+        ...(queueRes?.data?.rows || []),
+        ...(histRes?.data?.rows || []),
+      ];
+      const uniqueById = Object.values(
+        merged.reduce((acc, it) => {
+          acc[it.id] = it;
+          return acc;
+        }, {})
+      );
+      setIncidents(uniqueById);
+      setHistoryTotal(histRes?.data?.count || 0);
+    } catch (e) {
+      console.error('Error reloading incidents:', e);
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  // --------- manejadores de acciones ----------
+  const handleIncidentCreated = (created) => {
+    // el form ya la creó en la DB; aquí refrescamos y pasamos a "queue"
+    setActiveTab('queue');
+    reload();
   };
 
   const handleApproveIncident = async (incidentId, comment) => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setIncidents(prev => prev?.map(incident => 
-        incident?.id === incidentId 
-          ? { ...incident, status: 'approved', approvedAt: new Date(), approvalComment: comment }
-          : incident
-      ));
-    } catch (error) {
-      console.error('Error approving incident:', error);
+      await incidentService.approveIncident(incidentId, comment);
+      await reload();
+    } catch (e) {
+      console.error('Error approving incident:', e);
     }
   };
 
   const handleRejectIncident = async (incidentId, reason) => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setIncidents(prev => prev?.map(incident => 
-        incident?.id === incidentId 
-          ? { ...incident, status: 'rejected', rejectedAt: new Date(), rejectionReason: reason }
-          : incident
-      ));
-    } catch (error) {
-      console.error('Error rejecting incident:', error);
+      await incidentService.rejectIncident(incidentId, reason);
+      await reload();
+    } catch (e) {
+      console.error('Error rejecting incident:', e);
     }
   };
 
+  // --------- tabs ----------
   const tabs = [
     { id: 'create', label: 'Registrar Incidente', icon: 'Plus', count: null },
-    { id: 'queue', label: 'Cola de Aprobaciones', icon: 'Clock', count: incidents?.filter(i => i?.status === 'pending')?.length },
-    { id: 'history', label: 'Historial', icon: 'FileText', count: incidents?.length },
-    { id: 'analytics', label: 'Análisis', icon: 'BarChart3', count: null }
+    {
+      id: 'queue',
+      label: 'Cola de Aprobaciones',
+      icon: 'Clock',
+      count: incidents?.filter((i) => i?.status === 'pending')?.length || 0,
+    },
+    {
+      id: 'history',
+      label: 'Historial',
+      icon: 'FileText',
+      count: incidents?.length || 0,
+    },
+    { id: 'analytics', label: 'Análisis', icon: 'BarChart3', count: null },
   ];
 
+  // --------- loading inicial ----------
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex">
@@ -217,6 +196,7 @@ const IncidentRegistrationAndManagementSystem = () => {
     );
   }
 
+  // --------- render ----------
   return (
     <div className="min-h-screen bg-background">
       <RoleBasedSidebar userRole={currentUser?.role?.toLowerCase()} />
@@ -232,24 +212,24 @@ const IncidentRegistrationAndManagementSystem = () => {
                 </h1>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <NotificationCenter />
-              <UserContextHeader 
+              <UserContextHeader
                 user={currentUser}
-                onLogout={() => console.log('Logout')}
-                onProfileClick={() => console.log('Profile')}
-                onSiteChange={(site) => console.log('Site changed:', site)}
+                onLogout={() => {}}
+                onProfileClick={() => {}}
+                onSiteChange={() => {}}
               />
             </div>
           </div>
         </header>
 
-        {/* Main Content */}
+        {/* Main */}
         <main className="p-6">
           <NavigationBreadcrumb />
-          
-          {/* Tab Navigation */}
+
+          {/* Tabs */}
           <div className="mb-6">
             <div className="border-b border-border">
               <nav className="-mb-px flex space-x-8">
@@ -259,8 +239,10 @@ const IncidentRegistrationAndManagementSystem = () => {
                     onClick={() => setActiveTab(tab?.id)}
                     className={`
                       flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm transition-colors duration-150
-                      ${activeTab === tab?.id
-                        ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                      ${
+                        activeTab === tab?.id
+                          ? 'border-primary text-primary'
+                          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
                       }
                     `}
                   >
@@ -277,19 +259,20 @@ const IncidentRegistrationAndManagementSystem = () => {
             </div>
           </div>
 
-          {/* Tab Content */}
+          {/* Content */}
           <div className="space-y-6">
             {activeTab === 'create' && (
               <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
                 <div className="xl:col-span-2">
-                  <IncidentCreationForm 
-                    onSubmit={handleSubmitIncident}
-                    currentUser={currentUser}
+                  <IncidentCreationForm
+                    // Si como supervisor eliges a qué empleado va, pásalo por prop: targetEmployeeId="uuid"
+                    onIncidentCreated={handleIncidentCreated}
+                    onCancel={() => setActiveTab('queue')}
                   />
                 </div>
                 <div className="xl:col-span-3">
                   <PendingApprovalsQueue
-                    incidents={incidents?.filter(i => i?.status === 'pending')?.slice(0, 5)}
+                    incidents={incidents?.filter((i) => i?.status === 'pending')}
                     onApprove={handleApproveIncident}
                     onReject={handleRejectIncident}
                     currentUser={currentUser}
@@ -300,7 +283,7 @@ const IncidentRegistrationAndManagementSystem = () => {
 
             {activeTab === 'queue' && (
               <PendingApprovalsQueue
-                incidents={incidents}
+                incidents={incidents?.filter((i) => i?.status === 'pending')}
                 onApprove={handleApproveIncident}
                 onReject={handleRejectIncident}
                 currentUser={currentUser}
@@ -309,15 +292,30 @@ const IncidentRegistrationAndManagementSystem = () => {
 
             {activeTab === 'history' && (
               <IncidentHistoryGrid
-                incidents={incidents}
+                incidents={
+                  historyStatus === 'all'
+                    ? incidents
+                    : incidents?.filter((i) => i?.status === historyStatus)
+                }
                 currentUser={currentUser}
+                statusFilter={historyStatus}
+                onStatusFilterChange={(s) => {
+                  setHistoryPage(0);
+                  setHistoryStatus(s || 'all');
+                  reload();
+                }}
+                page={historyPage}
+                onPageChange={(p) => {
+                  setHistoryPage(p);
+                  reload();
+                }}
+                pageSize={historyPageSize}
+                total={historyTotal}
               />
             )}
 
             {activeTab === 'analytics' && (
-              <IncidentAnalyticsDashboard
-                incidents={incidents}
-              />
+              <IncidentAnalyticsDashboard incidents={incidents} />
             )}
           </div>
 

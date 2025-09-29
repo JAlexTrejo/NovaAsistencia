@@ -1,421 +1,296 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { useBranding } from '../../components/BrandingProvider';
-import BrandedHeader from '../../components/ui/BrandedHeader';
-import BrandedFooter from '../../components/ui/BrandedFooter';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import Select from '../../components/ui/Select';
-import NavigationBreadcrumb from '../../components/ui/NavigationBreadcrumb';
-import UserContextHeader from '../../components/ui/UserContextHeader';
-import NotificationCenter from '../../components/ui/NotificationCenter';
-import CurrencyDisplay from '../../components/ui/CurrencyDisplay';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Users, UserPlus, Search, Download, RefreshCw, Building2, UserCheck, AlertTriangle } from 'lucide-react';
+
+import { useAuth } from '@/contexts/AuthContext';
+import { useBranding } from '@/components/BrandingProvider';
+
+import BrandedHeader from '@/components/ui/BrandedHeader';
+import BrandedFooter from '@/components/ui/BrandedFooter';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
+import NavigationBreadcrumb from '@/components/ui/NavigationBreadcrumb';
+import UserContextHeader from '@/components/ui/UserContextHeader';
+import NotificationCenter from '@/components/ui/NotificationCenter';
+import CurrencyDisplay from '@/components/ui/CurrencyDisplay';
+import Loading from '../../components/ui/Loading';
+import ErrorState from '../../components/ui/ErrorState';
+import { showToast } from '../../components/ui/ToastHub';
+
 import { EmployeeRegistrationWizard } from './components/EmployeeRegistrationWizard';
 import { EmployeeProfileEditor } from './components/EmployeeProfileEditor';
 import { EmployeeListGrid } from './components/EmployeeListGrid';
-import { supabase } from '../../lib/supabase';
-import { Users, UserPlus, Search, Filter, Download, RefreshCw, Building2, UserCheck, AlertTriangle } from 'lucide-react';
+
+import { supabase } from '@/lib/supabase';
+import enhancedEmployeeService from '@/services/enhancedEmployeeService';
+import { useQuery } from '../../hooks/useQuery';
 
 export default function ComprehensiveEmployeeRegistrationAndProfileManagement() {
-  const { user, userProfile, isAdmin, isSuperAdmin } = useAuth();
+  const { isAdmin, isSuperAdmin } = useAuth();
   const { branding, formatCurrency } = useBranding();
-  const [employees, setEmployees] = useState([]);
-  const [constructionSites, setConstructionSites] = useState([]);
-  const [supervisors, setSupervisors] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [notification, setNotification] = useState(null);
 
   // UI State
   const [showRegistrationWizard, setShowRegistrationWizard] = useState(false);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid', 'table'
 
-  // Filter and Search State
+  // Filtros y búsqueda
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
-    site: '',
-    position: '',
+    site: 'all',
+    position: 'all',
     status: 'active',
-    role: '',
-    supervisor: ''
+    role: 'all',
+    supervisor: 'all'
   });
 
-  // Statistics
-  const [statistics, setStatistics] = useState({
-    totalEmployees: 0,
-    activeEmployees: 0,
-    totalSites: 0,
-    averageSalary: 0
-  });
-
-  const breadcrumbItems = [
+  const breadcrumbItems = useMemo(() => ([
     { label: 'Gestión', href: '/admin' },
     { label: 'Empleados', href: '/comprehensive-employee-registration-and-profile-management' }
-  ];
+  ]), []);
 
-  useEffect(() => {
-    if (isAdmin() || isSuperAdmin()) {
-      loadInitialData();
+  // ------------ QUERIES ------------
+  // Empleados
+  const {
+    data: employeesData,
+    isLoading: employeesLoading,
+    error: employeesError,
+    refetch: refetchEmployees
+  } = useQuery(
+    enhancedEmployeeService.getEmployees.bind(enhancedEmployeeService),
+    {
+      params: {
+        search: searchTerm || undefined,
+        site: filters.site,
+        position: filters.position,
+        status: filters.status === 'all' ? [] : [filters.status],
+        supervisor: filters.supervisor
+      },
+      deps: [searchTerm, JSON.stringify(filters)],
+      retry: 1,
+      keepPreviousData: true,
+      onError: (e) => showToast({ title: 'Error al cargar empleados', message: e.message, type: 'error' })
     }
-  }, [user]);
+  );
 
-  useEffect(() => {
-    applyFiltersAndSearch();
-  }, [searchTerm, filters]);
-
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      await Promise.all([
-        loadEmployees(),
-        loadConstructionSites(),
-        loadSupervisors(),
-        calculateStatistics()
-      ]);
-    } catch (error) {
-      setNotification({
-        type: 'error',
-        message: `Error al cargar datos: ${error?.message}`
-      });
-    } finally {
-      setLoading(false);
+  // Sitios
+  const {
+    data: sitesData,
+    isLoading: sitesLoading,
+    error: sitesError,
+    refetch: refetchSites
+  } = useQuery(
+    enhancedEmployeeService.getSites.bind(enhancedEmployeeService),
+    {
+      deps: [],
+      retry: 1,
+      keepPreviousData: true,
+      onError: (e) => showToast({ title: 'Error al cargar sitios', message: e.message, type: 'error' })
     }
-  };
+  );
 
-  const loadEmployees = async () => {
-    try {
-      const { data, error } = await supabase?.from('employee_profiles')?.select(`
-          *,
-          user_profiles:user_id (
-            id,
-            email,
-            full_name,
-            role,
-            phone
-          ),
-          construction_sites:site_id (
-            id,
-            name,
-            location
-          ),
-          supervisor:supervisor_id (
-            id,
-            full_name,
-            email,
-            phone
-          )
-        `)?.neq('status', 'deleted')?.order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setEmployees(data || []);
-    } catch (error) {
-      console.error('Error loading employees:', error);
-      setNotification({
-        type: 'error',
-        message: 'Error al cargar empleados'
-      });
+  // Supervisores
+  const {
+    data: supervisorsData,
+    isLoading: supervisorsLoading,
+    error: supervisorsError,
+    refetch: refetchSupervisors
+  } = useQuery(
+    enhancedEmployeeService.getSupervisors.bind(enhancedEmployeeService),
+    {
+      deps: [],
+      retry: 1,
+      keepPreviousData: true,
+      onError: (e) => showToast({ title: 'Error al cargar supervisores', message: e.message, type: 'error' })
     }
-  };
+  );
 
-  const loadConstructionSites = async () => {
-    try {
-      const { data, error } = await supabase?.from('construction_sites')?.select('*')?.eq('is_active', true)?.order('name', { ascending: true });
-
-      if (error) throw error;
-      setConstructionSites(data || []);
-    } catch (error) {
-      console.error('Error loading construction sites:', error);
+  // Estadísticas
+  const {
+    data: statsData,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats
+  } = useQuery(
+    enhancedEmployeeService.getEmployeeStats.bind(enhancedEmployeeService),
+    {
+      deps: [],
+      retry: 1,
+      keepPreviousData: true,
+      onError: (e) => showToast({ title: 'Error al calcular estadísticas', message: e.message, type: 'error' })
     }
-  };
+  );
 
-  const loadSupervisors = async () => {
-    try {
-      const { data, error } = await supabase?.from('user_profiles')?.select('id, full_name, email, phone')?.in('role', ['supervisor', 'admin', 'superadmin'])?.order('full_name', { ascending: true });
+  const loading = employeesLoading || sitesLoading || supervisorsLoading || statsLoading;
+  const anyError = employeesError || sitesError || supervisorsError || statsError;
 
-      if (error) throw error;
-      setSupervisors(data || []);
-    } catch (error) {
-      console.error('Error loading supervisors:', error);
-    }
-  };
+  // Derivados
+  const employees = employeesData ?? [];
+  const constructionSites = sitesData ?? [];
+  const supervisors = supervisorsData ?? [];
 
-  const calculateStatistics = async () => {
-    try {
-      const { data: employeeData, error: employeeError } = await supabase?.from('employee_profiles')?.select('status, hourly_rate, daily_salary, salary_type')?.neq('status', 'deleted');
-
-      if (employeeError) throw employeeError;
-
-      const totalEmployees = employeeData?.length || 0;
-      const activeEmployees = employeeData?.filter(emp => emp?.status === 'active')?.length || 0;
-      
-      // Calculate average salary (convert to hourly rate for consistency)
-      let totalHourlyRate = 0;
-      let salaryCount = 0;
-      
-      employeeData?.forEach(emp => {
-        if (emp?.salary_type === 'hourly' && emp?.hourly_rate > 0) {
-          totalHourlyRate += parseFloat(emp?.hourly_rate);
-          salaryCount++;
-        } else if (emp?.salary_type === 'daily' && emp?.daily_salary > 0) {
-          // Convert daily to hourly (assuming 8 hours per day)
-          totalHourlyRate += parseFloat(emp?.daily_salary) / 8;
-          salaryCount++;
+  const statistics = useMemo(() => ({
+    totalEmployees: statsData?.total ?? 0,
+    activeEmployees: statsData?.active ?? 0,
+    totalSites: constructionSites?.length ?? 0,
+    averageSalary: (() => {
+      if (!employees?.length) return 0;
+      let total = 0;
+      let count = 0;
+      employees.forEach(emp => {
+        if (emp?.salaryType === 'hourly' && emp?.hourlyRate > 0) {
+          total += Number(emp?.hourlyRate);
+          count++;
+        } else if (emp?.salaryType === 'daily' && emp?.dailySalary > 0) {
+          total += Number(emp?.dailySalary) / 8;
+          count++;
         }
       });
+      return count ? total / count : 0;
+    })()
+  }), [statsData, constructionSites, employees]);
 
-      const averageSalary = salaryCount > 0 ? totalHourlyRate / salaryCount : 0;
-
-      setStatistics({
-        totalEmployees,
-        activeEmployees,
-        totalSites: constructionSites?.length || 0,
-        averageSalary
-      });
-    } catch (error) {
-      console.error('Error calculating statistics:', error);
-    }
+  // Re-fetch agrupado
+  const refreshAll = async () => {
+    await Promise.all([refetchEmployees(), refetchSites(), refetchSupervisors(), refetchStats()]);
   };
 
-  const applyFiltersAndSearch = () => {
-    let filtered = [...employees];
-
-    // Apply search
-    if (searchTerm) {
-      const searchLower = searchTerm?.toLowerCase();
-      filtered = filtered?.filter(emp => 
-        emp?.full_name?.toLowerCase()?.includes(searchLower) ||
-        emp?.employee_id?.toLowerCase()?.includes(searchLower) ||
-        emp?.user_profiles?.email?.toLowerCase()?.includes(searchLower) ||
-        emp?.id_number?.toLowerCase()?.includes(searchLower) ||
-        emp?.phone?.toLowerCase()?.includes(searchLower)
-      );
-    }
-
-    // Apply filters
-    if (filters?.site) {
-      filtered = filtered?.filter(emp => emp?.site_id === filters?.site);
-    }
-    if (filters?.position) {
-      filtered = filtered?.filter(emp => emp?.position === filters?.position);
-    }
-    if (filters?.status) {
-      filtered = filtered?.filter(emp => emp?.status === filters?.status);
-    }
-    if (filters?.role) {
-      filtered = filtered?.filter(emp => emp?.user_profiles?.role === filters?.role);
-    }
-    if (filters?.supervisor) {
-      filtered = filtered?.filter(emp => emp?.supervisor_id === filters?.supervisor);
-    }
-
-    setEmployees(filtered);
-  };
-
+  // ------------ ACCIONES ------------
   const handleEmployeeRegistration = async (employeeData) => {
     try {
-      // Create user profile first if email is provided
+      // 1) Crear usuario (opcional)
       let userId = null;
       if (employeeData?.email) {
         const { data: authData, error: authError } = await supabase?.auth?.signUp({
           email: employeeData?.email,
           password: employeeData?.tempPassword || 'AsistenciaPro2024',
-          options: {
-            data: {
-              full_name: employeeData?.fullName,
-              role: employeeData?.role || 'user'
-            }
-          }
+          options: { data: { full_name: employeeData?.fullName, role: employeeData?.role || 'user' } }
         });
-
-        if (authError && !authError?.message?.includes('already registered')) {
-          throw authError;
-        }
-
-        userId = authData?.user?.id;
+        if (authError && !authError?.message?.includes('already registered')) throw authError;
+        userId = authData?.user?.id ?? null;
       }
 
-      // Create employee profile
-      const employeeProfile = {
-        full_name: employeeData?.fullName,
-        employee_id: employeeData?.employeeId || `EMP-${Date.now()}`,
-        email: employeeData?.email,
+      // 2) Crear perfil
+      const payload = {
+        userId,
+        name: employeeData?.fullName,
+        employeeId: employeeData?.employeeId || `EMP-${Date.now()}`,
         phone: employeeData?.phone,
         address: employeeData?.address,
-        birth_date: employeeData?.birthDate,
-        hire_date: employeeData?.hireDate || new Date()?.toISOString()?.split('T')?.[0],
+        birthDate: employeeData?.birthDate,
+        hireDate: employeeData?.hireDate || new Date().toISOString().split('T')[0],
         position: employeeData?.position || 'albañil',
-        hourly_rate: employeeData?.salaryType === 'hourly' ? parseFloat(employeeData?.hourlyRate || 0) : 0,
-        daily_salary: employeeData?.salaryType === 'daily' ? parseFloat(employeeData?.dailySalary || 0) : 0,
-        salary_type: employeeData?.salaryType || 'daily',
-        site_id: employeeData?.siteId || null,
-        supervisor_id: employeeData?.supervisorId || null,
-        user_id: userId,
-        emergency_contact: employeeData?.emergencyContact,
-        id_number: employeeData?.idNumber,
-        profile_picture_url: employeeData?.profilePicture || null,
-        status: 'active'
+        salaryType: employeeData?.salaryType || 'daily',
+        hourlyRate: employeeData?.salaryType === 'hourly' ? Number(employeeData?.hourlyRate || 0) : 0,
+        dailySalary: employeeData?.salaryType === 'daily' ? Number(employeeData?.dailySalary || 0) : 0,
+        siteId: employeeData?.siteId || null,
+        supervisorId: employeeData?.supervisorId || null,
+        emergencyContact: employeeData?.emergencyContact,
+        idNumber: employeeData?.idNumber,
+        avatar: employeeData?.profilePicture || null
       };
 
-      const { data, error } = await supabase?.from('employee_profiles')?.insert([employeeProfile])?.select(`
-          *,
-          user_profiles:user_id (
-            full_name,
-            email,
-            role
-          ),
-          construction_sites:site_id (
-            name,
-            location
-          ),
-          supervisor:supervisor_id (
-            full_name,
-            email
-          )
-        `)?.single();
+      await enhancedEmployeeService.createEmployee(payload);
 
-      if (error) throw error;
-
-      setNotification({
-        type: 'success',
-        message: 'Empleado registrado exitosamente'
-      });
-
+      showToast({ title: 'Listo', message: 'Empleado registrado exitosamente', type: 'success' });
       setShowRegistrationWizard(false);
-      await loadEmployees();
-      await calculateStatistics();
-
-      return { success: true, employee: data };
+      await Promise.all([refetchEmployees(), refetchStats()]);
+      return { success: true };
     } catch (error) {
-      setNotification({
-        type: 'error',
-        message: `Error al registrar empleado: ${error?.message}`
-      });
+      showToast({ title: 'Error al registrar', message: error?.message, type: 'error' });
       return { success: false, error: error?.message };
     }
   };
 
   const handleEmployeeUpdate = async (employeeId, updateData) => {
     try {
-      const { data, error } = await supabase?.from('employee_profiles')?.update({
-          full_name: updateData?.fullName,
-          phone: updateData?.phone,
-          address: updateData?.address,
-          birth_date: updateData?.birthDate,
-          position: updateData?.position,
-          hourly_rate: updateData?.salaryType === 'hourly' ? parseFloat(updateData?.hourlyRate || 0) : 0,
-          daily_salary: updateData?.salaryType === 'daily' ? parseFloat(updateData?.dailySalary || 0) : 0,
-          salary_type: updateData?.salaryType,
-          site_id: updateData?.siteId,
-          supervisor_id: updateData?.supervisorId,
-          emergency_contact: updateData?.emergencyContact,
-          id_number: updateData?.idNumber,
-          profile_picture_url: updateData?.profilePicture,
-          updated_at: new Date()?.toISOString()
-        })?.eq('id', employeeId)?.select()?.single();
+      const payload = {
+        name: updateData?.fullName,
+        phone: updateData?.phone,
+        address: updateData?.address,
+        birthDate: updateData?.birthDate,
+        position: updateData?.position,
+        salaryType: updateData?.salaryType,
+        hourlyRate: updateData?.salaryType === 'hourly' ? Number(updateData?.hourlyRate || 0) : 0,
+        dailySalary: updateData?.salaryType === 'daily' ? Number(updateData?.dailySalary || 0) : 0,
+        siteId: updateData?.siteId,
+        supervisorId: updateData?.supervisorId,
+        emergencyContact: updateData?.emergencyContact,
+        idNumber: updateData?.idNumber,
+        avatar: updateData?.profilePicture
+      };
 
-      if (error) throw error;
+      await enhancedEmployeeService.updateEmployee(employeeId, payload);
 
-      setNotification({
-        type: 'success',
-        message: 'Perfil del empleado actualizado exitosamente'
-      });
-
+      showToast({ title: 'Actualizado', message: 'Perfil del empleado actualizado', type: 'success' });
       setShowProfileEditor(false);
       setSelectedEmployee(null);
-      await loadEmployees();
-
-      return { success: true, employee: data };
+      await refetchEmployees();
+      return { success: true };
     } catch (error) {
-      setNotification({
-        type: 'error',
-        message: `Error al actualizar empleado: ${error?.message}`
-      });
+      showToast({ title: 'Error al actualizar', message: error?.message, type: 'error' });
       return { success: false, error: error?.message };
     }
   };
 
   const handleEmployeeAction = async (employeeId, action) => {
     try {
-      let updateData = {};
-      let successMessage = '';
+      let status = null;
+      if (action === 'activate') status = 'active';
+      if (action === 'suspend') status = 'suspended';
+      if (action === 'deactivate') status = 'inactive';
+      if (!status) return;
 
-      switch (action) {
-        case 'activate':
-          updateData = { status: 'active' };
-          successMessage = 'Empleado activado exitosamente';
-          break;
-        case 'suspend':
-          updateData = { status: 'suspended' };
-          successMessage = 'Empleado suspendido exitosamente';
-          break;
-        case 'deactivate':
-          updateData = { status: 'inactive' };
-          successMessage = 'Empleado desactivado exitosamente';
-          break;
-        default:
-          return;
-      }
-
-      const { error } = await supabase?.from('employee_profiles')?.update(updateData)?.eq('id', employeeId);
-
-      if (error) throw error;
-
-      setNotification({
-        type: 'success',
-        message: successMessage
-      });
-
-      await loadEmployees();
-      await calculateStatistics();
+      await enhancedEmployeeService.updateEmployee(employeeId, { status });
+      showToast({ title: 'Hecho', message: 'Estado actualizado', type: 'success' });
+      await Promise.all([refetchEmployees(), refetchStats()]);
     } catch (error) {
-      setNotification({
-        type: 'error',
-        message: `Error al actualizar estado del empleado: ${error?.message}`
-      });
+      showToast({ title: 'Error', message: error?.message, type: 'error' });
     }
   };
 
   const exportEmployeeData = async () => {
     try {
-      const csvData = employees?.map(emp => ({
-        'ID Empleado': emp?.employee_id,
-        'Nombre Completo': emp?.full_name,
-        'Email': emp?.user_profiles?.email || 'N/A',
+      if (!employees?.length) return;
+      const csvRows = employees.map(emp => ({
+        'ID Empleado': emp?.employeeId || '',
+        'Nombre Completo': emp?.name || '',
+        'Email': emp?.email || 'N/A',
         'Teléfono': emp?.phone || 'N/A',
-        'Puesto': emp?.position,
-        'Sitio': emp?.construction_sites?.name || 'Sin asignar',
-        'Supervisor': emp?.supervisor?.full_name || 'Sin asignar',
-        'Salario por Hora': formatCurrency(emp?.hourly_rate || 0),
-        'Salario Diario': formatCurrency(emp?.daily_salary || 0),
-        'Estado': emp?.status,
-        'Fecha de Contratación': emp?.hire_date
+        'Puesto': emp?.position || '',
+        'Sitio': emp?.site || 'Sin asignar',
+        'Supervisor': emp?.supervisor || 'Sin asignar',
+        'Salario por Hora': formatCurrency(emp?.hourlyRate || 0),
+        'Salario Diario': formatCurrency(emp?.dailySalary || 0),
+        'Estado': emp?.status || '',
+        'Fecha de Contratación': emp?.hireDate || ''
       }));
 
-      const csvContent = [
-        Object.keys(csvData?.[0] || {})?.join(','),
-        ...csvData?.map(row => Object.values(row)?.map(val => `"${val}"`)?.join(','))
-      ]?.join('\n');
+      const header = Object.keys(csvRows[0] || {}).join(',');
+      const body = csvRows
+        .map(r =>
+          Object.values(r)
+            .map(v => `"${String(v).replace(/"/g, '""')}"`)
+            .join(',')
+        )
+        .join('\n');
+      const csvContent = `${header}\n${body}`;
 
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL?.createObjectURL(blob);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `empleados_${new Date()?.toISOString()?.split('T')?.[0]}.csv`;
-      link?.click();
-      
-      setNotification({
-        type: 'success',
-        message: 'Datos exportados exitosamente'
-      });
-    } catch (error) {
-      setNotification({
-        type: 'error',
-        message: 'Error al exportar datos'
-      });
+      link.download = `empleados_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      showToast({ title: 'Listo', message: 'Datos exportados', type: 'success' });
+    } catch (_) {
+      showToast({ title: 'Error', message: 'No se pudo exportar', type: 'error' });
     }
   };
 
+  // ------------ GUARD DE ACCESO ------------
   if (!isAdmin() && !isSuperAdmin()) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -428,11 +303,30 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
     );
   }
 
+  // ------------ LOADING / ERROR ------------
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loading label="Cargando empleados y catálogos…" />
+      </div>
+    );
+  }
+
+  if (anyError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <ErrorState message="No se pudieron cargar los datos." onRetry={refreshAll} />
+      </div>
+    );
+  }
+
+  // ------------ RENDER ------------
   return (
     <div className="min-h-screen bg-gray-50">
       <BrandedHeader />
       <UserContextHeader />
       <NavigationBreadcrumb items={breadcrumbItems} />
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <div className="mb-8">
@@ -455,6 +349,7 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
                 <UserPlus className="h-4 w-4" />
                 Registrar Empleado
               </Button>
+
               <Button
                 variant="outline"
                 onClick={exportEmployeeData}
@@ -464,13 +359,13 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
                 <Download className="h-4 w-4" />
                 Exportar
               </Button>
+
               <Button
                 variant="outline"
-                onClick={loadInitialData}
-                disabled={loading}
+                onClick={refreshAll}
                 className="flex items-center gap-2"
               >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className="h-4 w-4" />
                 Actualizar
               </Button>
             </div>
@@ -552,24 +447,23 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
                   />
                 </div>
               </div>
+
               <div className="flex gap-3 flex-wrap">
                 <Select
                   value={filters?.site}
-                  onChange={(e) => setFilters({...filters, site: e?.target?.value})}
+                  onChange={(e) => setFilters((f) => ({ ...f, site: e?.target?.value }))}
                   options={[
-                    { value: '', label: 'Todos los sitios' },
-                    ...constructionSites?.map(site => ({
-                      value: site?.id,
-                      label: site?.name
-                    }))
+                    { value: 'all', label: 'Todos los sitios' },
+                    ...constructionSites?.map(site => ({ value: site?.id, label: site?.name }))
                   ]}
                   className="w-48"
                 />
+
                 <Select
                   value={filters?.position}
-                  onChange={(e) => setFilters({...filters, position: e?.target?.value})}
+                  onChange={(e) => setFilters((f) => ({ ...f, position: e?.target?.value }))}
                   options={[
-                    { value: '', label: 'Todos los puestos' },
+                    { value: 'all', label: 'Todos los puestos' },
                     { value: 'albañil', label: 'Albañil' },
                     { value: 'ayudante', label: 'Ayudante' },
                     { value: 'supervisor', label: 'Supervisor' },
@@ -583,11 +477,12 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
                   ]}
                   className="w-48"
                 />
+
                 <Select
                   value={filters?.status}
-                  onChange={(e) => setFilters({...filters, status: e?.target?.value})}
+                  onChange={(e) => setFilters((f) => ({ ...f, status: e?.target?.value }))}
                   options={[
-                    { value: '', label: 'Todos los estados' },
+                    { value: 'all', label: 'Todos los estados' },
                     { value: 'active', label: 'Activo' },
                     { value: 'inactive', label: 'Inactivo' },
                     { value: 'suspended', label: 'Suspendido' }
@@ -613,7 +508,8 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
           formatCurrency={formatCurrency}
         />
       </main>
-      {/* Employee Registration Wizard Modal */}
+
+      {/* Modales */}
       {showRegistrationWizard && (
         <EmployeeRegistrationWizard
           constructionSites={constructionSites}
@@ -623,7 +519,7 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
           branding={branding}
         />
       )}
-      {/* Employee Profile Editor Modal */}
+
       {showProfileEditor && selectedEmployee && (
         <EmployeeProfileEditor
           employee={selectedEmployee}
@@ -637,11 +533,10 @@ export default function ComprehensiveEmployeeRegistrationAndProfileManagement() 
           branding={branding}
         />
       )}
-      {/* Notification */}
-      <NotificationCenter
-        notification={notification}
-        onClose={() => setNotification(null)}
-      />
+
+      {/* Notificaciones globales */}
+      <NotificationCenter />
+
       <BrandedFooter />
     </div>
   );

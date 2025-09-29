@@ -1,31 +1,48 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { hasRole } from '../constants/roles.ts';
+import Loading from '../components/ui/Loading';
+import NotAuthorized from '../components/ui/NotAuthorized';
 
-const ProtectedRoute = ({ children }) => {
-  const { user, userProfile, loading } = useAuth();
+/**
+ * Production-ready ProtectedRoute component with consistent RBAC
+ */
+export function ProtectedRoute({ 
+  children, 
+  requiredRole = null, 
+  requiredPermission = null,
+  fallbackPath = '/employee-login-portal'
+}) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
 
+  // Show loading while auth state is being determined
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <span className="text-gray-600">Cargando...</span>
-        </div>
-      </div>
-    );
+    return <Loading />;
   }
 
+  // Redirect to login if not authenticated
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate 
+      to={fallbackPath} 
+      state={{ from: location }} 
+      replace 
+    />;
   }
 
-  // Check if user profile exists and is complete
-  if (!userProfile) {
-    return <Navigate to="/profile-center" replace />;
+  // Check role-based access
+  if (requiredRole && !hasRole(user?.role, requiredRole)) {
+    return <NotAuthorized requiredRole={requiredRole} userRole={user?.role} />;
   }
 
-  return children;
-};
+  // Check permission-based access
+  if (requiredPermission && !hasPermission(user?.role, requiredPermission)) {
+    return <NotAuthorized requiredPermission={requiredPermission} userRole={user?.role} />;
+  }
+
+  // User is authenticated and authorized
+  return <>{children}</>;
+}
 
 export default ProtectedRoute;

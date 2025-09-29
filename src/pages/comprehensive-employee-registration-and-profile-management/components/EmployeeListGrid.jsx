@@ -1,22 +1,33 @@
+// comprehensive-employee-registration-and-profile-management/components/EmployeeListGrid.jsx
 import React from 'react';
 import Button from '../../../components/ui/Button';
 import CurrencyDisplay from '../../../components/ui/CurrencyDisplay';
-import { User, Phone, Mail, Calendar, Edit, Play, Pause, Ban, RefreshCw, Building2, UserCheck, Crown } from 'lucide-react';
+import {
+  User,
+  Phone,
+  Mail,
+  Calendar,
+  Edit,
+  Play,
+  Pause,
+  Ban,
+  RefreshCw,
+  Building2,
+  UserCheck,
+  Crown,
+} from 'lucide-react';
 
-export function EmployeeListGrid({ 
-  employees = [], 
-  constructionSites = [], 
-  supervisors = [], 
-  onEditEmployee, 
-  onEmployeeAction, 
+export function EmployeeListGrid({
+  employees = [],
+  onEditEmployee,
+  onEmployeeAction,
   loading = false,
-  formatCurrency 
 }) {
   const getStatusBadge = (status) => {
     const statusConfig = {
       active: { label: 'Activo', className: 'bg-green-100 text-green-800', icon: UserCheck },
       inactive: { label: 'Inactivo', className: 'bg-gray-100 text-gray-800', icon: Pause },
-      suspended: { label: 'Suspendido', className: 'bg-yellow-100 text-yellow-800', icon: Ban }
+      suspended: { label: 'Suspendido', className: 'bg-yellow-100 text-yellow-800', icon: Ban },
     };
 
     const config = statusConfig?.[status] || statusConfig?.inactive;
@@ -43,7 +54,7 @@ export function EmployeeListGrid({
     const roleConfig = {
       admin: { label: 'Admin', className: 'bg-blue-100 text-blue-800' },
       supervisor: { label: 'Supervisor', className: 'bg-orange-100 text-orange-800' },
-      user: { label: 'Usuario', className: 'bg-gray-100 text-gray-800' }
+      user: { label: 'Usuario', className: 'bg-gray-100 text-gray-800' },
     };
 
     const config = roleConfig?.[role] || roleConfig?.user;
@@ -66,36 +77,51 @@ export function EmployeeListGrid({
       pintor: 'Pintor',
       carpintero: 'Carpintero',
       soldador: 'Soldador',
-      operador_maquinaria: 'Operador de Maquinaria'
+      operador_maquinaria: 'Operador de Maquinaria',
     };
 
-    return positions?.[position] || position;
+    return positions?.[position] || position || 'No asignado';
   };
 
   const getSalaryDisplay = (employee) => {
-    if (employee?.salary_type === 'hourly' && employee?.hourly_rate > 0) {
+    const salaryType = employee?.salary_type;
+    const hourly = Number(employee?.hourly_rate) || 0;
+    const daily = Number(employee?.daily_salary) || 0;
+
+    if (salaryType === 'hourly' && hourly > 0) {
       return (
         <div>
-          <CurrencyDisplay amount={employee?.hourly_rate} />/hr
+          <CurrencyDisplay amount={hourly} />/hr
           <div className="text-xs text-gray-500">
-            <CurrencyDisplay amount={employee?.hourly_rate * 8} />/día
+            <CurrencyDisplay amount={hourly * 8} />/día
           </div>
         </div>
       );
     }
-    
-    if (employee?.salary_type === 'daily' && employee?.daily_salary > 0) {
+
+    if (salaryType === 'daily' && daily > 0) {
       return (
         <div>
-          <CurrencyDisplay amount={employee?.daily_salary} />/día
+          <CurrencyDisplay amount={daily} />/día
           <div className="text-xs text-gray-500">
-            <CurrencyDisplay amount={employee?.daily_salary / 8} />/hr
+            <CurrencyDisplay amount={daily / 8} />/hr
           </div>
         </div>
       );
     }
 
     return <span className="text-gray-400">No definido</span>;
+  };
+
+  const safeDate = (d) => {
+    if (!d) return '—';
+    try {
+      const dt = d instanceof Date ? d : new Date(d);
+      if (isNaN(dt.getTime())) return '—';
+      return dt.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return '—';
+    }
   };
 
   if (loading) {
@@ -109,15 +135,13 @@ export function EmployeeListGrid({
     );
   }
 
-  if (employees?.length === 0) {
+  if (!employees?.length) {
     return (
       <div className="bg-white rounded-lg shadow">
         <div className="text-center py-12">
           <User className="mx-auto h-12 w-12 text-gray-400 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No hay empleados</h3>
-          <p className="text-gray-600">
-            No se encontraron empleados que coincidan con los filtros seleccionados.
-          </p>
+          <p className="text-gray-600">No se encontraron empleados que coincidan con los filtros seleccionados.</p>
         </div>
       </div>
     );
@@ -126,146 +150,152 @@ export function EmployeeListGrid({
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="px-6 py-4 border-b">
-        <h2 className="text-lg font-semibold text-gray-900">
-          Empleados ({employees?.length})
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900">Empleados ({employees?.length})</h2>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-        {employees?.map((employee) => (
-          <div key={employee?.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="flex-shrink-0">
-                  <div className="h-12 w-12 bg-gray-200 rounded-full flex items-center justify-center">
-                    <span className="text-lg font-medium text-gray-700">
-                      {employee?.full_name?.charAt(0)?.toUpperCase() || 'E'}
-                    </span>
+        {employees.map((employee) => {
+          const initials =
+            (employee?.full_name || '')
+              .split(' ')
+              .map((n) => n?.[0])
+              .slice(0, 2)
+              .join('')
+              .toUpperCase() || 'E';
+
+          return (
+            <div key={employee?.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow">
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="flex-shrink-0">
+                    <div className="h-12 w-12 bg-gray-200 rounded-full flex items-center justify-center">
+                      <span className="text-lg font-medium text-gray-700">{initials}</span>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-medium text-gray-900 truncate">
+                      {employee?.full_name || 'Sin nombre'}
+                    </h3>
+                    <p className="text-sm text-gray-500">ID: {employee?.employee_id || 'N/A'}</p>
                   </div>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-lg font-medium text-gray-900 truncate">
-                    {employee?.full_name || 'Sin nombre'}
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    ID: {employee?.employee_id}
-                  </p>
+
+                <div className="flex flex-col gap-1 items-end">
+                  {getStatusBadge(employee?.status)}
+                  {getRoleBadge(employee?.user_profiles?.role, employee?.user_profiles?.is_super_admin)}
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
-                {getStatusBadge(employee?.status)}
-                {getRoleBadge(employee?.user_profiles?.role, employee?.user_profiles?.is_super_admin)}
-              </div>
-            </div>
 
-            {/* Employee Details */}
-            <div className="space-y-3">
-              <div className="flex items-center text-sm text-gray-600">
-                <Briefcase className="h-4 w-4 mr-2 flex-shrink-0" />
-                <span>{getPositionLabel(employee?.position)}</span>
-              </div>
-
-              {employee?.user_profiles?.email && (
+              {/* Employee Details */}
+              <div className="space-y-3">
                 <div className="flex items-center text-sm text-gray-600">
-                  <Mail className="h-4 w-4 mr-2 flex-shrink-0" />
-                  <span className="truncate">{employee?.user_profiles?.email}</span>
+                  <Briefcase className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span>{getPositionLabel(employee?.position)}</span>
                 </div>
-              )}
 
-              {employee?.phone && (
-                <div className="flex items-center text-sm text-gray-600">
-                  <Phone className="h-4 w-4 mr-2 flex-shrink-0" />
-                  <span>{employee?.phone}</span>
-                </div>
-              )}
-
-              {employee?.construction_sites && (
-                <div className="flex items-center text-sm text-gray-600">
-                  <Building2 className="h-4 w-4 mr-2 flex-shrink-0" />
-                  <span className="truncate">{employee?.construction_sites?.name}</span>
-                </div>
-              )}
-
-              {employee?.supervisor && (
-                <div className="flex items-center text-sm text-gray-600">
-                  <User className="h-4 w-4 mr-2 flex-shrink-0" />
-                  <span className="truncate">Sup: {employee?.supervisor?.full_name}</span>
-                </div>
-              )}
-
-              <div className="flex items-center text-sm text-gray-600">
-                <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
-                <span>Desde: {new Date(employee?.hire_date)?.toLocaleDateString()}</span>
-              </div>
-            </div>
-
-            {/* Salary Information */}
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Salario:</span>
-                <div className="text-right">
-                  {getSalaryDisplay(employee)}
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="mt-6 flex justify-between">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onEditEmployee?.(employee)}
-                className="flex items-center gap-1"
-              >
-                <Edit className="h-3 w-3" />
-                Editar
-              </Button>
-
-              <div className="flex gap-2">
-                {employee?.status === 'active' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onEmployeeAction?.(employee?.id, 'suspend')}
-                    className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
-                  >
-                    <Pause className="h-3 w-3" />
-                  </Button>
+                {!!employee?.user_profiles?.email && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Mail className="h-4 w-4 mr-2 flex-shrink-0" />
+                    <span className="truncate">{employee?.user_profiles?.email}</span>
+                  </div>
                 )}
 
-                {employee?.status === 'suspended' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onEmployeeAction?.(employee?.id, 'activate')}
-                    className="text-green-600 border-green-600 hover:bg-green-50"
-                  >
-                    <Play className="h-3 w-3" />
-                  </Button>
+                {!!employee?.phone && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Phone className="h-4 w-4 mr-2 flex-shrink-0" />
+                    <span>{employee?.phone}</span>
+                  </div>
                 )}
 
-                {employee?.status === 'inactive' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onEmployeeAction?.(employee?.id, 'activate')}
-                    className="text-green-600 border-green-600 hover:bg-green-50"
-                  >
-                    <UserCheck className="h-3 w-3" />
-                  </Button>
+                {!!employee?.construction_sites && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Building2 className="h-4 w-4 mr-2 flex-shrink-0" />
+                    <span className="truncate">{employee?.construction_sites?.name}</span>
+                  </div>
                 )}
+
+                {!!employee?.supervisor && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <User className="h-4 w-4 mr-2 flex-shrink-0" />
+                    <span className="truncate">Sup: {employee?.supervisor?.full_name}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center text-sm text-gray-600">
+                  <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span>Desde: {safeDate(employee?.hire_date)}</span>
+                </div>
+              </div>
+
+              {/* Salary Information */}
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Salario:</span>
+                  <div className="text-right">{getSalaryDisplay(employee)}</div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onEditEmployee?.(employee)}
+                  className="flex items-center gap-1"
+                >
+                  <Edit className="h-3 w-3" />
+                  Editar
+                </Button>
+
+                <div className="flex gap-2">
+                  {employee?.status === 'active' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEmployeeAction?.(employee?.id, 'suspend')}
+                      className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
+                    >
+                      <Pause className="h-3 w-3" />
+                    </Button>
+                  )}
+
+                  {employee?.status === 'suspended' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEmployeeAction?.(employee?.id, 'activate')}
+                      className="text-green-600 border-green-600 hover:bg-green-50"
+                    >
+                      <Play className="h-3 w-3" />
+                    </Button>
+                  )}
+
+                  {employee?.status === 'inactive' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEmployeeAction?.(employee?.id, 'activate')}
+                      className="text-green-600 border-green-600 hover:bg-green-50"
+                    >
+                      <UserCheck className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// Missing import for Briefcase
+// Icono Briefcase inline (evita dependencias extra)
 const Briefcase = ({ className }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0H8m8 0v6m-8-6v6m0 0v6a2 2 0 002 2h4a2 2 0 002-2v-6" />
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6V4a2 2 0 012-2h0a2 2 0 012 2v2m-8 0h12a2 2 0 012 2v7a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2z" />
   </svg>
 );
+
+export default EmployeeListGrid;

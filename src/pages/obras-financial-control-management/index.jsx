@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { 
-  Building, 
-  DollarSign, 
-  TrendingUp, 
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  Building,
+  DollarSign,
+  TrendingUp,
   TrendingDown,
   Eye,
   Plus,
@@ -15,132 +15,148 @@ import {
   X,
   Download,
   Filter,
-  Search
+  Search,
 } from 'lucide-react';
-import { obrasService, financialAnalyticsService } from '../../services/obrasFinancialService';
+import { obrasService, financialAnalyticsService } from '@/services/obrasFinancialService';
 import ObraCreationModal from './components/ObraCreationModal';
 import ObraDetailModal from './components/ObraDetailModal';
 import ExportModal from './components/ExportModal';
 import FiltersModal from './components/FiltersModal';
 
 const ObrasFinancialControlManagement = () => {
-  const { isAdmin, isSuperAdmin, loading } = useAuth();
+  const auth = useAuth();
+  const { loading } = auth || {};
+
+  // Soporta ambos estilos de autorización: isAdmin()/isSuperAdmin() o hasRole('admin'|'superadmin')
+  const canManage = useMemo(() => {
+    const byFn =
+      (typeof auth?.isAdmin === 'function' && auth?.isAdmin()) ||
+      (typeof auth?.isSuperAdmin === 'function' && auth?.isSuperAdmin());
+    const byRole =
+      typeof auth?.hasRole === 'function' &&
+      (auth?.hasRole('admin') || auth?.hasRole('superadmin'));
+    return !!(byFn || byRole);
+  }, [auth]);
+
   const [obras, setObras] = useState([]);
   const [filteredObras, setFilteredObras] = useState([]);
   const [overallKPIs, setOverallKPIs] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
-  
-  // Modal states
+
+  // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [selectedObra, setSelectedObra] = useState(null);
-  
-  // Filter states
+
+  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState('all');
   const [dateRangeFilter, setDateRangeFilter] = useState({ start: '', end: '' });
 
-  // Check permissions
+  // Cargar datos si tiene permisos
   useEffect(() => {
     if (loading) return;
-    
-    if (!isAdmin() && !isSuperAdmin()) {
+    if (!canManage) {
       setError('No tienes permisos para acceder a la gestión financiera de obras.');
+      setLoadingData(false);
       return;
     }
-    
     loadData();
-  }, [loading, isAdmin, isSuperAdmin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, canManage]);
 
-  // Load obras and KPIs data
   const loadData = async () => {
     try {
       setLoadingData(true);
       setError('');
 
-      const [obrasResult, kpisResult] = await Promise.all([
-        obrasService?.getAll(),
-        financialAnalyticsService?.getOverallKPIs()
+      const [obrasRes, kpisRes] = await Promise.all([
+        obrasService?.getAll?.(),
+        financialAnalyticsService?.getOverallKPIs?.(),
       ]);
 
-      if (obrasResult?.error) {
-        setError(`Error al cargar obras: ${obrasResult?.error}`);
-        return;
+      if (!obrasRes?.ok) {
+        setError(`Error al cargar obras: ${obrasRes?.error || 'desconocido'}`);
+        setObras([]);
+        setFilteredObras([]);
+      } else {
+        setObras(obrasRes?.data || []);
+        setFilteredObras(obrasRes?.data || []);
       }
 
-      if (kpisResult?.error) {
-        setError(`Error al cargar KPIs: ${kpisResult?.error}`);
-        return;
+      if (!kpisRes?.ok) {
+        // No bloquea la tabla si fallan KPIs
+        console.warn('Error al cargar KPIs:', kpisRes?.error);
+        setOverallKPIs(null);
+      } else {
+        setOverallKPIs(kpisRes?.data || null);
       }
-
-      setObras(obrasResult?.data || []);
-      setFilteredObras(obrasResult?.data || []);
-      setOverallKPIs(kpisResult?.data);
     } catch (err) {
-      setError('Error al cargar los datos de obras');
       console.error('Error loading obras data:', err);
+      setError('Error al cargar los datos de obras');
     } finally {
       setLoadingData(false);
     }
   };
 
-  // Apply filters
+  // Aplicar filtros
   useEffect(() => {
-    let filtered = obras;
+    let filtered = Array.isArray(obras) ? [...obras] : [];
 
-    // Search filter
+    // Búsqueda
     if (searchTerm) {
-      filtered = filtered?.filter(obra => 
-        obra?.nombre?.toLowerCase()?.includes(searchTerm?.toLowerCase()) ||
-        obra?.clave?.toLowerCase()?.includes(searchTerm?.toLowerCase()) ||
-        obra?.empresa_nombre?.toLowerCase()?.includes(searchTerm?.toLowerCase())
+      const t = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (obra) =>
+          obra?.nombre?.toLowerCase?.().includes(t) ||
+          obra?.clave?.toLowerCase?.().includes(t) ||
+          obra?.empresa_nombre?.toLowerCase?.().includes(t)
       );
     }
 
-    // Status filter
+    // Estatus
     if (statusFilter !== 'all') {
-      filtered = filtered?.filter(obra => obra?.estatus === statusFilter);
+      filtered = filtered.filter((obra) => obra?.estatus === statusFilter);
     }
 
-    // Company filter
+    // Empresa
     if (companyFilter !== 'all') {
-      filtered = filtered?.filter(obra => obra?.empresa_id === companyFilter);
+      filtered = filtered.filter((obra) => obra?.empresa_id === companyFilter);
     }
 
-    // Date range filter
+    // Rango de fechas (usa fecha_inicio)
     if (dateRangeFilter?.start && dateRangeFilter?.end) {
-      filtered = filtered?.filter(obra => {
-        const obraDate = new Date(obra?.fecha_inicio);
-        const startDate = new Date(dateRangeFilter?.start);
-        const endDate = new Date(dateRangeFilter?.end);
-        return obraDate >= startDate && obraDate <= endDate;
+      const startDate = new Date(dateRangeFilter.start);
+      const endDate = new Date(dateRangeFilter.end);
+      filtered = filtered.filter((obra) => {
+        const obraDate = obra?.fecha_inicio ? new Date(obra.fecha_inicio) : null;
+        return obraDate && obraDate >= startDate && obraDate <= endDate;
       });
     }
 
     setFilteredObras(filtered);
   }, [obras, searchTerm, statusFilter, companyFilter, dateRangeFilter]);
 
-  // Format currency
+  // Helpers UI
   const formatCurrency = (amount) => {
-    if (!amount && amount !== 0) return '$0.00';
+    if (amount === null || amount === undefined || isNaN(amount)) return '$0.00';
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
       currency: 'MXN',
-      minimumFractionDigits: 2
-    })?.format(amount);
+      minimumFractionDigits: 2,
+    }).format(Number(amount));
   };
 
-  // Format percentage
   const formatPercentage = (value) => {
-    if (!value && value !== 0) return '0%';
-    return `${value?.toFixed(1)}%`;
+    const num = Number(value);
+    if (isNaN(num)) return '0%';
+    return `${num.toFixed(1)}%`;
   };
 
-  // Get status icon
   const getStatusIcon = (status) => {
     switch (status) {
       case 'En ejecución':
@@ -158,7 +174,6 @@ const ObrasFinancialControlManagement = () => {
     }
   };
 
-  // Get status color class
   const getStatusColorClass = (status) => {
     switch (status) {
       case 'En ejecución':
@@ -176,24 +191,22 @@ const ObrasFinancialControlManagement = () => {
     }
   };
 
-  // Handle obra detail view
   const handleViewObra = (obra) => {
     setSelectedObra(obra);
     setShowDetailModal(true);
   };
 
-  // Handle successful obra creation
   const handleObraCreated = () => {
     setShowCreateModal(false);
-    loadData(); // Reload data
+    loadData();
   };
 
-  // Handle successful obra update
   const handleObraUpdated = () => {
     setShowDetailModal(false);
-    loadData(); // Reload data
+    loadData();
   };
 
+  // Loading Auth
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -202,13 +215,16 @@ const ObrasFinancialControlManagement = () => {
     );
   }
 
-  if (error && !isAdmin() && !isSuperAdmin()) {
+  // Sin permisos
+  if (!canManage) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Acceso Denegado</h2>
-          <p className="text-gray-600">{error}</p>
+          <p className="text-gray-600">
+            No tienes permisos para acceder a la gestión financiera de obras.
+          </p>
         </div>
       </div>
     );
@@ -223,7 +239,9 @@ const ObrasFinancialControlManagement = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">Control Financiero de Obras</h1>
-                <p className="mt-2 text-gray-600">Gestión integral de presupuestos, facturas, pagos y KPIs</p>
+                <p className="mt-2 text-gray-600">
+                  Gestión integral de presupuestos, facturas, pagos y KPIs
+                </p>
               </div>
               <div className="flex space-x-4">
                 <button
@@ -252,8 +270,9 @@ const ObrasFinancialControlManagement = () => {
           </div>
         </div>
       </div>
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Overall KPIs */}
+        {/* KPIs */}
         {overallKPIs && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
@@ -263,8 +282,12 @@ const ObrasFinancialControlManagement = () => {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-500">Total Obras</p>
-                  <p className="text-2xl font-semibold text-gray-900">{overallKPIs?.obras_total || 0}</p>
-                  <p className="text-sm text-green-600">{overallKPIs?.obras_activas || 0} activas</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {overallKPIs?.obras_total || 0}
+                  </p>
+                  <p className="text-sm text-green-600">
+                    {overallKPIs?.obras_activas || 0} activas
+                  </p>
                 </div>
               </div>
             </div>
@@ -313,7 +336,7 @@ const ObrasFinancialControlManagement = () => {
           </div>
         )}
 
-        {/* Search Bar */}
+        {/* Buscador */}
         <div className="bg-white rounded-lg shadow p-4 mb-6">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -329,7 +352,7 @@ const ObrasFinancialControlManagement = () => {
           </div>
         </div>
 
-        {/* Loading State */}
+        {/* Loading */}
         {loadingData && (
           <div className="bg-white rounded-lg shadow p-8">
             <div className="flex items-center justify-center">
@@ -339,8 +362,8 @@ const ObrasFinancialControlManagement = () => {
           </div>
         )}
 
-        {/* Error State */}
-        {error && (
+        {/* Error */}
+        {error && !loadingData && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <div className="flex items-center">
               <AlertTriangle className="h-5 w-5 text-red-500 mr-2" />
@@ -349,7 +372,7 @@ const ObrasFinancialControlManagement = () => {
           </div>
         )}
 
-        {/* Obras Table */}
+        {/* Tabla */}
         {!loadingData && !error && (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
@@ -387,13 +410,11 @@ const ObrasFinancialControlManagement = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredObras?.length > 0 ? (
-                    filteredObras?.map((obra) => (
-                      <tr key={obra?.obra_id} className="hover:bg-gray-50">
+                    filteredObras.map((obra) => (
+                      <tr key={obra?.obra_id || obra?.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {obra?.nombre}
-                            </div>
+                            <div className="text-sm font-medium text-gray-900">{obra?.nombre}</div>
                             <div className="text-sm text-gray-500">
                               {obra?.clave} • {obra?.empresa_nombre}
                             </div>
@@ -402,7 +423,11 @@ const ObrasFinancialControlManagement = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-2">
                             {getStatusIcon(obra?.estatus)}
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColorClass(obra?.estatus)}`}>
+                            <span
+                              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColorClass(
+                                obra?.estatus
+                              )}`}
+                            >
                               {obra?.estatus}
                             </span>
                           </div>
@@ -414,7 +439,13 @@ const ObrasFinancialControlManagement = () => {
                           {formatCurrency(obra?.facturado_total)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span className={obra?.por_cobrar > 0 ? 'text-orange-600 font-medium' : 'text-gray-900'}>
+                          <span
+                            className={
+                              Number(obra?.por_cobrar) > 0
+                                ? 'text-orange-600 font-medium'
+                                : 'text-gray-900'
+                            }
+                          >
                             {formatCurrency(obra?.por_cobrar)}
                           </span>
                         </td>
@@ -422,16 +453,24 @@ const ObrasFinancialControlManagement = () => {
                           {formatCurrency(obra?.gastos_total)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span className={obra?.utilidad_pct_real >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                          <span
+                            className={
+                              Number(obra?.utilidad_pct_real) >= 0
+                                ? 'text-green-600 font-medium'
+                                : 'text-red-600 font-medium'
+                            }
+                          >
                             {formatPercentage(obra?.utilidad_pct_real)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="flex items-center space-x-2">
                             <div className="flex-1 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-blue-600 h-2 rounded-full" 
-                                style={{ width: `${Math.min(obra?.avance_financiero_pct || 0, 100)}%` }}
+                              <div
+                                className="bg-blue-600 h-2 rounded-full"
+                                style={{
+                                  width: `${Math.min(Number(obra?.avance_financiero_pct) || 0, 100)}%`,
+                                }}
                               ></div>
                             </div>
                             <span className="text-xs font-medium">
@@ -479,25 +518,16 @@ const ObrasFinancialControlManagement = () => {
           </div>
         )}
       </div>
+
       {/* Modals */}
       {showCreateModal && (
-        <ObraCreationModal
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={handleObraCreated}
-        />
+        <ObraCreationModal onClose={() => setShowCreateModal(false)} onSuccess={handleObraCreated} />
       )}
       {showDetailModal && selectedObra && (
-        <ObraDetailModal
-          obra={selectedObra}
-          onClose={() => setShowDetailModal(false)}
-          onSuccess={handleObraUpdated}
-        />
+        <ObraDetailModal obra={selectedObra} onClose={() => setShowDetailModal(false)} onSuccess={handleObraUpdated} />
       )}
       {showExportModal && (
-        <ExportModal
-          obras={filteredObras}
-          onClose={() => setShowExportModal(false)}
-        />
+        <ExportModal obras={filteredObras} onClose={() => setShowExportModal(false)} />
       )}
       {showFiltersModal && (
         <FiltersModal
@@ -511,7 +541,7 @@ const ObrasFinancialControlManagement = () => {
           currentFilters={{
             status: statusFilter,
             company: companyFilter,
-            dateRange: dateRangeFilter
+            dateRange: dateRangeFilter,
           }}
         />
       )}

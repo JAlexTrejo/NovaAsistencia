@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Users, Key, Lock, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { employeeService } from '../../services/employeeService';
+import * as employeeService from '../../services/employeeService';
 import BrandedHeader from '../../components/ui/BrandedHeader';
 import PermissionMatrix from './components/PermissionMatrix';
 import RealTimeAccessValidation from './components/RealTimeAccessValidation';

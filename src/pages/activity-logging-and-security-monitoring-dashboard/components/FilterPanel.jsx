@@ -1,27 +1,34 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Calendar, Filter, RotateCcw } from 'lucide-react';
 
-export default function FilterPanel({ filters, onFilterChange }) {
-  const handleFilterChange = (key, value) => {
-    onFilterChange?.({
-      ...filters,
-      [key]: value
-    });
-  };
+export default function FilterPanel({
+  filters,
+  onFilterChange,
+  // nuevas props para evitar mocks:
+  moduleOptions = [],       // [{value:'Authentication', label:'Autenticación'}, ...]
+  actionOptions = [],       // [{value:'login', label:'Inicio de sesión'}, ...]
+  roleOptions = [],         // [{value:'user', label:'Usuario'}, ...]
+  severityOptions = []      // [{value:'critical', label:'Crítica'}, ...]
+}) {
+  const handle = (key, value) => onFilterChange?.({ ...filters, [key]: value });
 
-  const resetFilters = () => {
-    onFilterChange?.({
-      dateRange: 'today',
-      module: 'all',
-      action: 'all',
-      role: 'all',
-      severity: 'all'
-    });
-  };
+  const reset = () => onFilterChange?.({
+    dateRange: 'today',
+    startDate: '',
+    endDate: '',
+    module: 'all',
+    action: 'all',
+    role: 'all',
+    severity: 'all'
+  });
 
-  const hasActiveFilters = Object.values(filters || {})?.some(value => 
-    value !== 'all' && value !== 'today'
-  );
+  const hasActiveFilters = useMemo(() =>
+    Object.entries(filters || {}).some(([k, v]) =>
+      !['all', 'today', '', null, undefined].includes(v) && !['startDate','endDate'].includes(k)
+    ) || !!(filters?.startDate || filters?.endDate)
+  , [filters]);
+
+  const showCustomDates = filters?.dateRange === 'custom';
 
   return (
     <div className="space-y-4">
@@ -30,12 +37,9 @@ export default function FilterPanel({ filters, onFilterChange }) {
           <Filter className="h-5 w-5 mr-2" />
           Filtros Avanzados
         </h3>
-        
+
         {hasActiveFilters && (
-          <button
-            onClick={resetFilters}
-            className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
-          >
+          <button onClick={reset} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
             <RotateCcw className="h-4 w-4 mr-1" />
             Limpiar filtros
           </button>
@@ -43,7 +47,7 @@ export default function FilterPanel({ filters, onFilterChange }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Date Range Filter */}
+        {/* Date Range */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700 flex items-center">
             <Calendar className="h-4 w-4 mr-1" />
@@ -51,127 +55,112 @@ export default function FilterPanel({ filters, onFilterChange }) {
           </label>
           <select
             value={filters?.dateRange || 'today'}
-            onChange={(e) => handleFilterChange('dateRange', e?.target?.value)}
+            onChange={(e) => handle('dateRange', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="today">Hoy</option>
             <option value="week">Última semana</option>
             <option value="month">Último mes</option>
             <option value="all">Todo el tiempo</option>
+            <option value="custom">Personalizado</option>
           </select>
+
+          {showCustomDates && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={filters?.startDate || ''}
+                onChange={(e) => handle('startDate', e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+              <input
+                type="date"
+                value={filters?.endDate || ''}
+                onChange={(e) => handle('endDate', e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
+          )}
         </div>
 
-        {/* Module Filter */}
+        {/* Module */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Módulo
-          </label>
+          <label className="block text-sm font-medium text-gray-700">Módulo</label>
           <select
             value={filters?.module || 'all'}
-            onChange={(e) => handleFilterChange('module', e?.target?.value)}
+            onChange={(e) => handle('module', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="all">Todos los módulos</option>
-            <option value="Authentication">Autenticación</option>
-            <option value="Profile">Perfil</option>
-            <option value="Attendance">Asistencia</option>
-            <option value="Configuration">Configuración</option>
-            <option value="Reports">Reportes</option>
-            <option value="Security">Seguridad</option>
-            <option value="Administration">Administración</option>
+            {moduleOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
         </div>
 
-        {/* Action Filter */}
+        {/* Action */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Acción
-          </label>
+          <label className="block text-sm font-medium text-gray-700">Acción</label>
           <select
             value={filters?.action || 'all'}
-            onChange={(e) => handleFilterChange('action', e?.target?.value)}
+            onChange={(e) => handle('action', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="all">Todas las acciones</option>
-            <option value="login">Inicio de sesión</option>
-            <option value="logout">Cierre de sesión</option>
-            <option value="check_in">Check-in</option>
-            <option value="check_out">Check-out</option>
-            <option value="profile_update">Actualización de perfil</option>
-            <option value="config_change">Cambio de configuración</option>
-            <option value="failed_login">Login fallido</option>
-            <option value="unauthorized_access">Acceso no autorizado</option>
+            {actionOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
         </div>
 
-        {/* Role Filter */}
+        {/* Role */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Rol de Usuario
-          </label>
+          <label className="block text-sm font-medium text-gray-700">Rol de Usuario</label>
           <select
             value={filters?.role || 'all'}
-            onChange={(e) => handleFilterChange('role', e?.target?.value)}
+            onChange={(e) => handle('role', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="all">Todos los roles</option>
-            <option value="user">Usuario</option>
-            <option value="supervisor">Supervisor</option>
-            <option value="admin">Administrador</option>
-            <option value="superadmin">Super Administrador</option>
+            {roleOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
         </div>
 
-        {/* Severity Filter */}
+        {/* Severity */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Severidad
-          </label>
+          <label className="block text-sm font-medium text-gray-700">Severidad</label>
           <select
             value={filters?.severity || 'all'}
-            onChange={(e) => handleFilterChange('severity', e?.target?.value)}
+            onChange={(e) => handle('severity', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="all">Todas las severidades</option>
-            <option value="critical">Crítica</option>
-            <option value="high">Alta</option>
-            <option value="medium">Media</option>
-            <option value="low">Baja</option>
-            <option value="info">Información</option>
+            {severityOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
         </div>
       </div>
 
-      {/* Active Filters Summary */}
+      {/* Active filters summary */}
       {hasActiveFilters && (
         <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <div className="flex items-center space-x-2 text-sm text-blue-800">
-            <span className="font-medium">Filtros activos:</span>
-            {filters?.dateRange !== 'today' && filters?.dateRange !== 'all' && (
+          <div className="flex items-center flex-wrap gap-2 text-sm text-blue-800">
+            <span className="font-medium mr-1">Filtros activos:</span>
+            {filters?.dateRange && filters?.dateRange !== 'today' && (
               <span className="bg-blue-100 px-2 py-1 rounded text-xs">
-                Fecha: {filters?.dateRange === 'week' ? 'Última semana' : 'Último mes'}
+                Fecha: {filters?.dateRange === 'custom'
+                  ? `${filters?.startDate || '—'} → ${filters?.endDate || '—'}`
+                  : filters?.dateRange === 'week' ? 'Última semana'
+                  : filters?.dateRange === 'month' ? 'Último mes' : 'Todo el tiempo'}
               </span>
             )}
-            {filters?.module !== 'all' && (
-              <span className="bg-blue-100 px-2 py-1 rounded text-xs">
-                Módulo: {filters?.module}
-              </span>
-            )}
-            {filters?.action !== 'all' && (
-              <span className="bg-blue-100 px-2 py-1 rounded text-xs">
-                Acción: {filters?.action?.replace(/_/g, ' ')}
-              </span>
-            )}
-            {filters?.role !== 'all' && (
-              <span className="bg-blue-100 px-2 py-1 rounded text-xs">
-                Rol: {filters?.role}
-              </span>
-            )}
-            {filters?.severity !== 'all' && (
-              <span className="bg-blue-100 px-2 py-1 rounded text-xs">
-                Severidad: {filters?.severity}
-              </span>
-            )}
+            {filters?.module !== 'all' && <span className="bg-blue-100 px-2 py-1 rounded text-xs">Módulo: {filters?.module}</span>}
+            {filters?.action !== 'all' && <span className="bg-blue-100 px-2 py-1 rounded text-xs">Acción: {String(filters?.action).replace(/_/g,' ')}</span>}
+            {filters?.role !== 'all' && <span className="bg-blue-100 px-2 py-1 rounded text-xs">Rol: {filters?.role}</span>}
+            {filters?.severity !== 'all' && <span className="bg-blue-100 px-2 py-1 rounded text-xs">Severidad: {filters?.severity}</span>}
           </div>
         </div>
       )}

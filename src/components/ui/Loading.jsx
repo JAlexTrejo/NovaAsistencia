@@ -1,8 +1,15 @@
-// src/components/ui/Loading.jsx
-export default function Loading({ label = 'Cargando…' }) {
+import React, { useEffect } from 'react';
+
+const Loading = () => {
+  React.useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.warn('Placeholder: Loading is not implemented yet.');
+  }, []);
   return (
-    <div className="w-full py-6 text-center text-sm text-slate-600">
-      {label}
-    </div>
+    <>
+  { /*Loading */} 
+ </>
   );
-}
+};
+
+export default Loading;

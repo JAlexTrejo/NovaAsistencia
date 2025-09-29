@@ -25,8 +25,8 @@ export function AttendanceActionButtons({ siteId, onAttendanceUpdate }) {
       setLoading(true)
       const result = await attendanceService?.getTodayAttendance(user?.id)
       
-      if (result?.success) {
-        setTodayRecord(result?.record)
+      if (result?.ok) {
+        setTodayRecord(result?.data)
       }
     } catch (error) {
       console.error('Error loading today attendance:', error)
@@ -93,15 +93,15 @@ export function AttendanceActionButtons({ siteId, onAttendanceUpdate }) {
         location
       )
 
-      if (result?.success) {
-        setTodayRecord(result?.record)
+      if (result?.ok) {
+        setTodayRecord(result?.data)
         
         let successMsg = getActionSuccessMessage(action)
         
         // Add location validation info to success message
-        if (result?.locationValidation) {
-          if (result?.locationValidation?.dentro_del_rango) {
-            successMsg += ` ✅ Ubicación validada (${result?.locationValidation?.distancia_metros}m)`
+        if (result?.validation) {
+          if (result?.validation?.dentro_del_rango) {
+            successMsg += ` ✅ Ubicación validada (${result?.validation?.distancia_metros}m)`
           }
         }
         
@@ -110,7 +110,7 @@ export function AttendanceActionButtons({ siteId, onAttendanceUpdate }) {
         }
         
         setMessage(successMsg)
-        onAttendanceUpdate?.(result?.record)
+        onAttendanceUpdate?.(result?.data)
         
         // Clear message after 5 seconds
         setTimeout(() => {

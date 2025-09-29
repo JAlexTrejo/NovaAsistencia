@@ -1,82 +1,128 @@
-import React, { useState } from 'react';
+// src/administrator-employee-management-console/EmployeeFilters.jsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../../../components/AppIcon';
 import Select from '../../../components/ui/Select';
 import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 import { Checkbox } from '../../../components/ui/Checkbox';
 
-const EmployeeFilters = ({ 
-  filters, 
-  onFiltersChange, 
+import { siteDataService } from '../../data/siteDataService';
+import { supervisorDataService } from '../../data/supervisorDataService';
+
+const EmployeeFilters = ({
+  filters,
+  onFiltersChange,
   onClearFilters,
   savedFilters = [],
   onSaveFilter,
-  onLoadFilter 
+  onLoadFilter,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [filterName, setFilterName] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
 
-  const constructionSites = [
-    { value: 'all', label: 'Todos los sitios' },
-    { value: 'obra-central', label: 'Obra Central' },
-    { value: 'proyecto-norte', label: 'Proyecto Norte' },
-    { value: 'edificio-sur', label: 'Edificio Sur' },
-    { value: 'complejo-oeste', label: 'Complejo Oeste' }
-  ];
+  const [sites, setSites] = useState([]);
+  const [sitesLoading, setSitesLoading] = useState(false);
 
-  const supervisors = [
-    { value: 'all', label: 'Todos los supervisores' },
-    { value: 'carlos-martinez', label: 'Carlos Martínez' },
-    { value: 'ana-rodriguez', label: 'Ana Rodríguez' },
-    { value: 'miguel-santos', label: 'Miguel Santos' },
-    { value: 'lucia-fernandez', label: 'Lucía Fernández' }
-  ];
+  const [supervisors, setSupervisors] = useState([]);
+  const [supervisorsLoading, setSupervisorsLoading] = useState(false);
 
-  const employmentStatuses = [
-    { id: 'active', label: 'Activo', checked: filters?.status?.includes('active') || false },
-    { id: 'inactive', label: 'Inactivo', checked: filters?.status?.includes('inactive') || false },
-    { id: 'suspended', label: 'Suspendido', checked: filters?.status?.includes('suspended') || false },
-    { id: 'terminated', label: 'Terminado', checked: filters?.status?.includes('terminated') || false }
-  ];
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Cargar sitios reales
+  useEffect(() => {
+    const loadSites = async () => {
+      setSitesLoading(true);
+      try {
+        const res = await siteDataService.getSites();
+        if (mountedRef.current && res?.success) setSites(res.data || []);
+      } catch (e) {
+        console.error('Error loading sites:', e);
+      } finally {
+        setSitesLoading(false);
+      }
+    };
+    loadSites();
+  }, []);
+
+  // Cargar supervisores reales
+  useEffect(() => {
+    const loadSupervisors = async () => {
+      setSupervisorsLoading(true);
+      try {
+        const res = await supervisorDataService.getSupervisors();
+        if (mountedRef.current && res?.success) setSupervisors(res.data || []);
+      } catch (e) {
+        console.error('Error loading supervisors:', e);
+      } finally {
+        setSupervisorsLoading(false);
+      }
+    };
+    loadSupervisors();
+  }, []);
+
+  const constructionSiteOptions = useMemo(() => {
+    const base = [{ value: 'all', label: 'Todos los sitios' }];
+    const dynamic = (sites || []).map(s => ({ value: s.id, label: s.nombre }));
+    return base.concat(dynamic);
+  }, [sites]);
+
+  const supervisorOptions = useMemo(() => {
+    const base = [{ value: 'all', label: 'Todos los supervisores' }];
+    const dynamic = (supervisors || []).map(u => ({
+      value: u.id,
+      label: u.nombre || u.correo,
+    }));
+    return base.concat(dynamic);
+  }, [supervisors]);
+
+  const employmentStatuses = useMemo(() => {
+    const current = filters?.status || [];
+    return [
+      { id: 'active',     label: 'Activo',     checked: current.includes('active') },
+      { id: 'inactive',   label: 'Inactivo',   checked: current.includes('inactive') },
+      { id: 'suspended',  label: 'Suspendido', checked: current.includes('suspended') },
+      { id: 'terminated', label: 'Terminado',  checked: current.includes('terminated') },
+    ];
+  }, [filters?.status]);
 
   const handleStatusChange = (statusId, checked) => {
     const currentStatus = filters?.status || [];
-    let newStatus;
-    
-    if (checked) {
-      newStatus = [...currentStatus, statusId];
-    } else {
-      newStatus = currentStatus?.filter(s => s !== statusId);
-    }
-    
-    onFiltersChange({ ...filters, status: newStatus });
+    const next = checked ? [...new Set([...currentStatus, statusId])] : currentStatus.filter(s => s !== statusId);
+    onFiltersChange({ ...filters, status: next });
   };
 
   const handleSaveFilter = () => {
-    if (filterName?.trim()) {
-      onSaveFilter({
-        name: filterName,
-        filters: filters,
-        createdAt: new Date()
-      });
-      setFilterName('');
-      setShowSaveDialog(false);
-    }
+    const name = filterName.trim();
+    if (!name) return;
+    onSaveFilter?.({
+      name,
+      filters,
+      createdAt: new Date(),
+    });
+    setFilterName('');
+    setShowSaveDialog(false);
   };
 
   const hasActiveFilters = () => {
-    return filters?.search || 
-           filters?.site !== 'all' || 
-           filters?.supervisor !== 'all' || 
-           (filters?.status && filters?.status?.length > 0) ||
-           filters?.hireDateFrom ||
-           filters?.hireDateTo;
+    return Boolean(
+      filters?.search ||
+      (filters?.site && filters.site !== 'all') ||
+      (filters?.supervisor && filters.supervisor !== 'all') ||
+      (filters?.status && filters.status.length > 0) ||
+      filters?.hireDateFrom ||
+      filters?.hireDateTo
+    );
   };
 
   return (
     <div className="bg-card border border-border rounded-lg">
-      {/* Filter Header */}
+      {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center space-x-2">
           <Icon name="Filter" size={20} className="text-muted-foreground" />
@@ -87,7 +133,7 @@ const EmployeeFilters = ({
             </span>
           )}
         </div>
-        
+
         <div className="flex items-center space-x-2">
           <Button
             variant="ghost"
@@ -99,7 +145,7 @@ const EmployeeFilters = ({
           >
             Guardar
           </Button>
-          
+
           <Button
             variant="ghost"
             size="sm"
@@ -110,7 +156,7 @@ const EmployeeFilters = ({
           >
             Limpiar
           </Button>
-          
+
           <Button
             variant="ghost"
             size="icon"
@@ -120,7 +166,8 @@ const EmployeeFilters = ({
           />
         </div>
       </div>
-      {/* Filter Content */}
+
+      {/* Content */}
       {!isCollapsed && (
         <div className="p-4 space-y-4">
           {/* Search */}
@@ -136,26 +183,30 @@ const EmployeeFilters = ({
           {/* Construction Site */}
           <Select
             label="Sitio de construcción"
-            options={constructionSites}
+            options={constructionSiteOptions}
             value={filters?.site || 'all'}
             onChange={(value) => onFiltersChange({ ...filters, site: value })}
             className="mb-4"
+            placeholder={sitesLoading ? 'Cargando sitios...' : 'Seleccionar sitio...'}
+            disabled={sitesLoading}
           />
 
           {/* Supervisor */}
           <Select
             label="Supervisor"
-            options={supervisors}
+            options={supervisorOptions}
             value={filters?.supervisor || 'all'}
             onChange={(value) => onFiltersChange({ ...filters, supervisor: value })}
             className="mb-4"
+            placeholder={supervisorsLoading ? 'Cargando supervisores...' : 'Seleccionar supervisor...'}
+            disabled={supervisorsLoading}
           />
 
           {/* Employment Status */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">Estado de empleo</label>
             <div className="space-y-2">
-              {employmentStatuses?.map((status) => (
+              {employmentStatuses.map((status) => (
                 <Checkbox
                   key={status.id}
                   label={status.label}
@@ -187,10 +238,10 @@ const EmployeeFilters = ({
             <div className="pt-4 border-t border-border">
               <label className="text-sm font-medium text-foreground mb-2 block">Filtros guardados</label>
               <div className="space-y-2">
-                {savedFilters?.map((savedFilter, index) => (
+                {savedFilters.map((savedFilter, index) => (
                   <button
                     key={index}
-                    onClick={() => onLoadFilter(savedFilter)}
+                    onClick={() => onLoadFilter?.(savedFilter)}
                     className="w-full flex items-center justify-between p-2 text-sm bg-muted hover:bg-muted/80 rounded-md transition-colors duration-150 ease-out-cubic"
                   >
                     <span className="text-foreground">{savedFilter?.name}</span>
@@ -202,12 +253,13 @@ const EmployeeFilters = ({
           )}
         </div>
       )}
+
       {/* Save Filter Dialog */}
       {showSaveDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-card border border-border rounded-lg p-6 w-96 max-w-full mx-4">
             <h3 className="text-lg font-semibold text-foreground mb-4">Guardar filtro</h3>
-            
+
             <Input
               label="Nombre del filtro"
               placeholder="Ej: Empleados activos - Obra Central"
@@ -215,7 +267,7 @@ const EmployeeFilters = ({
               onChange={(e) => setFilterName(e?.target?.value)}
               className="mb-4"
             />
-            
+
             <div className="flex justify-end space-x-2">
               <Button
                 variant="outline"
@@ -226,10 +278,7 @@ const EmployeeFilters = ({
               >
                 Cancelar
               </Button>
-              <Button
-                onClick={handleSaveFilter}
-                disabled={!filterName?.trim()}
-              >
+              <Button onClick={handleSaveFilter} disabled={!filterName.trim()}>
                 Guardar
               </Button>
             </div>

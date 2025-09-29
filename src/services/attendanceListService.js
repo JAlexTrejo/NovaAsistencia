@@ -1,85 +1,191 @@
-import { supabase } from '@/lib/supabase';
-import { adaptSupabaseError } from '@/utils/errors';
-
-const ok   = (data) => ({ ok: true, data });
-const fail = (e)    => ({ ok: false, ...adaptSupabaseError(e) });
-
-const ROW_COLS = [
-  'id',
-  'employee_id',
-  'site_id',
-  'date',
-  'clock_in',
-  'clock_out',
-  'lunch_start',
-  'lunch_end',
-  'total_hours',
-  'overtime_hours',
-  'status',
-  'location_in',
-  'location_out',
-  'notes',
-  'created_at',
-].join(',');
-
-const NEST_EMPLOYEE = `
-  user_profiles:employee_id (
-    id,
-    full_name,
-    email
-  )
-`;
-
-const NEST_SITE = `
-  construction_sites:site_id (
-    id,
-    name,
-    location
-  )
-`;
-
-const PAGE_SIZE = 50;
+import { supabase } from '../lib/supabase';
+import { adaptSupabaseError } from '../utils/errors.ts';
+import { sanitizePagination, sanitizeSorting } from '../utils/serviceHelpers';
 
 /**
- * Lista de asistencias con paginación y filtros (fecha, empleado, sitio, búsqueda por nombre)
- * @param {Object} params
- *   - page        number
- *   - startDate   'YYYY-MM-DD'
- *   - endDate     'YYYY-MM-DD'
- *   - employeeId  uuid
- *   - siteId      uuid
- *   - search      string (filtra por nombre del empleado)
+ * Production-ready attendance list service for real-time operations
  */
-export async function listAttendance(params = {}) {
-  try {
-    const { page = 0, startDate, endDate, employeeId, siteId, search } = params;
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+const attendanceListService = {
+  /**
+   * Get today's attendance by site
+   */
+  async listTodayBySite(siteId, options = {}) {
+    try {
+      const {
+        status = null,
+        page = 0,
+        pageSize = 50
+      } = options;
 
-    let query = supabase
-      .from('attendance_records')
-      .select([ROW_COLS, NEST_EMPLOYEE, NEST_SITE].join(','), { count: 'exact' })
-      .order('date', { ascending: false })
-      .range(from, to);
+      const today = new Date()?.toISOString()?.split('T')?.[0];
+      const { offset, limit } = sanitizePagination({ page, pageSize });
 
-    if (startDate) query = query.gte('date', startDate);
-    if (endDate) query = query.lte('date', endDate);
-    if (employeeId) query = query.eq('employee_id', employeeId);
-    if (siteId) query = query.eq('site_id', siteId);
+      let query = supabase?.from('attendance_records')?.select(`
+          *,
+          employee_profiles!inner(
+            full_name,
+            employee_id,
+            position,
+            profile_picture_url
+          )
+        `, { count: 'exact' })?.eq('date', today)?.order('clock_in', { ascending: false, nullsFirst: false })?.range(offset, offset + limit - 1);
 
-    // para búsqueda por nombre, usamos filtro lateral con or y ilike sobre user_profiles.full_name
-    if (search) {
-      // NOTA: PostgREST no permite ilike directo sobre alias anidado; alternativa: vista o RPC.
-      // Como workaround ligero, filtramos por 'notes' o status y dejamos búsqueda por nombre para una vista futura.
-      // Si tienes una vista "attendance_view" con join, la podemos usar aquí.
-      query = query.or(`status.ilike.%${search}%,notes.ilike.%${search}%`);
+      if (siteId && siteId !== 'all') {
+        query = query?.eq('site_id', siteId);
+      }
+
+      if (status && status !== 'all') {
+        query = query?.eq('status', status);
+      }
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        throw error;
+      }
+
+      return {
+        ok: true,
+        data: {
+          records: data || [],
+          total: count || 0,
+          page: Math.floor(offset / limit),
+          pageSize: limit,
+          date: today
+        }
+      };
+    } catch (e) {
+      const adaptedError = adaptSupabaseError(e);
+      return {
+        ok: false,
+        error: adaptedError?.error,
+        code: adaptedError?.code
+      };
     }
+  },
 
-    const { data, error, count } = await query;
-    if (error) return fail(error);
+  /**
+   * Get attendance records by date range
+   */
+  async listByRange(options = {}) {
+    try {
+      const {
+        siteId = null,
+        startDate,
+        endDate,
+        page = 0,
+        pageSize = 50,
+        sortBy = 'date',
+        sortDir = 'desc'
+      } = options;
 
-    return ok({ rows: data || [], count: count ?? 0, page, pageSize: PAGE_SIZE });
-  } catch (e) {
-    return fail(e);
+      const { offset, limit } = sanitizePagination({ page, pageSize });
+      const { sortBy: safeSort, ascending } = sanitizeSorting(
+        { sortBy, sortDir },
+        ['date', 'clock_in', 'clock_out', 'total_hours', 'status']
+      );
+
+      let query = supabase?.from('attendance_records')?.select(`
+          *,
+          employee_profiles!inner(
+            full_name,
+            employee_id,
+            position,
+            profile_picture_url
+          ),
+          construction_sites(name, location)
+        `, { count: 'exact' })?.order(safeSort, { ascending })?.range(offset, offset + limit - 1);
+
+      if (siteId && siteId !== 'all') {
+        query = query?.eq('site_id', siteId);
+      }
+
+      if (startDate) {
+        query = query?.gte('date', startDate);
+      }
+
+      if (endDate) {
+        query = query?.lte('date', endDate);
+      }
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        throw error;
+      }
+
+      return {
+        ok: true,
+        data: {
+          records: data || [],
+          total: count || 0,
+          page: Math.floor(offset / limit),
+          pageSize: limit,
+          totalPages: Math.ceil((count || 0) / limit),
+          filters: { siteId, startDate, endDate }
+        }
+      };
+    } catch (e) {
+      const adaptedError = adaptSupabaseError(e);
+      return {
+        ok: false,
+        error: adaptedError?.error,
+        code: adaptedError?.code
+      };
+    }
+  },
+
+  /**
+   * Get real-time attendance statistics
+   */
+  async getAttendanceStats(siteId = null) {
+    try {
+      const today = new Date()?.toISOString()?.split('T')?.[0];
+
+      // Base query for today's attendance
+      let baseQuery = supabase?.from('attendance_records')?.select('status', { count: 'exact', head: true })?.eq('date', today);
+
+      if (siteId && siteId !== 'all') {
+        baseQuery = baseQuery?.eq('site_id', siteId);
+      }
+
+      // Get counts for each status
+      const [
+        { count: total, error: e1 },
+        { count: present, error: e2 },
+        { count: late, error: e3 },
+        { count: absent, error: e4 }
+      ] = await Promise.all([
+        baseQuery,
+        baseQuery?.eq('status', 'present'),
+        baseQuery?.eq('status', 'late'),
+        baseQuery?.eq('status', 'absent')
+      ]);
+
+      if (e1 || e2 || e3 || e4) {
+        throw new Error('Error fetching attendance statistics');
+      }
+
+      return {
+        ok: true,
+        data: {
+          total: total || 0,
+          present: present || 0,
+          late: late || 0,
+          absent: absent || 0,
+          date: today,
+          siteId
+        }
+      };
+    } catch (e) {
+      const adaptedError = adaptSupabaseError(e);
+      return {
+        ok: false,
+        error: adaptedError?.error,
+        code: adaptedError?.code
+      };
+    }
   }
-}
+};
+
+export default attendanceListService;

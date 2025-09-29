@@ -38,14 +38,14 @@ const SafetyReminders = () => {
       id: 1,
       type: 'info',
       title: 'Capacitación de Seguridad',
-      message: 'Capacitación obligatoria de seguridad próxima, espera confirmación de fecha.',
+      message: 'Capacitación obligatoria de seguridad el viernes 8 de enero a las 8:00 AM.',
       date: '2025-01-04'
     },
     {
       id: 2,
       type: 'warning',
       title: 'Condiciones Climáticas',
-      message: 'Se esperan lluvias. Extreme precauciones en superficies resbaladizas.',
+      message: 'Se esperan lluvias fuertes. Extreme precauciones en superficies resbaladizas.',
       date: '2025-01-04'
     },
     {

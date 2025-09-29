@@ -1,62 +1,52 @@
-import React, { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
-
+// src/modules/attendance-history-and-analytics-dashboard/components/AttendanceChart.jsx
+import React, { useState, useMemo } from 'react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, PieChart, Pie, Cell
+} from 'recharts';
 import Button from '../../../components/ui/Button';
 
-const AttendanceChart = ({ data, chartType, onChartTypeChange }) => {
+const AttendanceChart = ({ data = {}, chartType, onChartTypeChange, loading = false }) => {
   const [selectedPeriod, setSelectedPeriod] = useState('week');
 
-  const weeklyData = [
-    { name: 'Lun', attendance: 95, late: 5, overtime: 12 },
-    { name: 'Mar', attendance: 92, late: 8, overtime: 15 },
-    { name: 'Mié', attendance: 98, late: 2, overtime: 8 },
-    { name: 'Jue', attendance: 89, late: 11, overtime: 18 },
-    { name: 'Vie', attendance: 94, late: 6, overtime: 10 },
-    { name: 'Sáb', attendance: 87, late: 13, overtime: 22 }
-  ];
-
-  const monthlyTrendData = [
-    { month: 'Ene', attendance: 92, productivity: 88 },
-    { month: 'Feb', attendance: 94, productivity: 91 },
-    { month: 'Mar', attendance: 89, productivity: 85 },
-    { month: 'Abr', attendance: 96, productivity: 93 },
-    { month: 'May', attendance: 91, productivity: 89 },
-    { month: 'Jun', attendance: 93, productivity: 90 }
-  ];
-
-  const statusDistribution = [
-    { name: 'Completo', value: 78, color: '#059669' },
-    { name: 'Tardío', value: 12, color: '#D97706' },
-    { name: 'Incompleto', value: 7, color: '#DC2626' },
-    { name: 'Horas Extra', value: 3, color: '#2563EB' }
-  ];
-
+  // Chart options
   const chartTypes = [
     { key: 'bar', label: 'Barras', icon: 'BarChart3' },
     { key: 'line', label: 'Líneas', icon: 'TrendingUp' },
     { key: 'pie', label: 'Circular', icon: 'PieChart' }
   ];
-
   const periods = [
     { key: 'week', label: 'Semana' },
     { key: 'month', label: 'Mes' },
     { key: 'quarter', label: 'Trimestre' }
   ];
 
+  // Extract datasets depending on period
+  const weeklyData = data?.weekly || [];
+  const monthlyTrendData = data?.monthly || [];
+  const statusDistribution = data?.distribution || [];
+
+  // Insights calculation (example: adjust based on your backend shape)
+  const insights = useMemo(() => {
+    if (!weeklyData?.length) return { attendance: 0, late: 0, overtime: 0 };
+    const total = weeklyData.length;
+    const avgAttendance = weeklyData.reduce((s, d) => s + (d.attendance || 0), 0) / total;
+    const avgLate = weeklyData.reduce((s, d) => s + (d.late || 0), 0) / total;
+    const avgOvertime = weeklyData.reduce((s, d) => s + (d.overtime || 0), 0) / total;
+    return {
+      attendance: avgAttendance.toFixed(1),
+      late: avgLate.toFixed(1),
+      overtime: avgOvertime.toFixed(1)
+    };
+  }, [weeklyData]);
+
   const renderBarChart = () => (
     <ResponsiveContainer width="100%" height={400}>
       <BarChart data={weeklyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-        <XAxis 
-          dataKey="name" 
-          stroke="#64748B"
-          fontSize={12}
-        />
-        <YAxis 
-          stroke="#64748B"
-          fontSize={12}
-        />
-        <Tooltip 
+        <XAxis dataKey="name" stroke="#64748B" fontSize={12} />
+        <YAxis stroke="#64748B" fontSize={12} />
+        <Tooltip
           contentStyle={{
             backgroundColor: '#FFFFFF',
             border: '1px solid #E2E8F0',
@@ -75,16 +65,9 @@ const AttendanceChart = ({ data, chartType, onChartTypeChange }) => {
     <ResponsiveContainer width="100%" height={400}>
       <LineChart data={monthlyTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-        <XAxis 
-          dataKey="month" 
-          stroke="#64748B"
-          fontSize={12}
-        />
-        <YAxis 
-          stroke="#64748B"
-          fontSize={12}
-        />
-        <Tooltip 
+        <XAxis dataKey="month" stroke="#64748B" fontSize={12} />
+        <YAxis stroke="#64748B" fontSize={12} />
+        <Tooltip
           contentStyle={{
             backgroundColor: '#FFFFFF',
             border: '1px solid #E2E8F0',
@@ -92,18 +75,18 @@ const AttendanceChart = ({ data, chartType, onChartTypeChange }) => {
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
           }}
         />
-        <Line 
-          type="monotone" 
-          dataKey="attendance" 
-          stroke="#2563EB" 
+        <Line
+          type="monotone"
+          dataKey="attendance"
+          stroke="#2563EB"
           strokeWidth={3}
           dot={{ fill: '#2563EB', strokeWidth: 2, r: 6 }}
           name="Asistencia %"
         />
-        <Line 
-          type="monotone" 
-          dataKey="productivity" 
-          stroke="#059669" 
+        <Line
+          type="monotone"
+          dataKey="productivity"
+          stroke="#059669"
           strokeWidth={3}
           dot={{ fill: '#059669', strokeWidth: 2, r: 6 }}
           name="Productividad %"
@@ -128,7 +111,7 @@ const AttendanceChart = ({ data, chartType, onChartTypeChange }) => {
             <Cell key={`cell-${index}`} fill={entry?.color} />
           ))}
         </Pie>
-        <Tooltip 
+        <Tooltip
           contentStyle={{
             backgroundColor: '#FFFFFF',
             border: '1px solid #E2E8F0',
@@ -142,13 +125,13 @@ const AttendanceChart = ({ data, chartType, onChartTypeChange }) => {
   );
 
   const renderChart = () => {
+    if (loading) {
+      return <div className="h-[400px] flex items-center justify-center text-muted-foreground">Cargando datos...</div>;
+    }
     switch (chartType) {
-      case 'line':
-        return renderLineChart();
-      case 'pie':
-        return renderPieChart();
-      default:
-        return renderBarChart();
+      case 'line': return renderLineChart();
+      case 'pie': return renderPieChart();
+      default: return renderBarChart();
     }
   };
 
@@ -193,40 +176,40 @@ const AttendanceChart = ({ data, chartType, onChartTypeChange }) => {
           </div>
         </div>
       </div>
-      {/* Chart Container */}
-      <div className="w-full">
-        {renderChart()}
-      </div>
-      {/* Chart Legend for Pie Chart */}
-      {chartType === 'pie' && (
+
+      {/* Chart */}
+      <div className="w-full">{renderChart()}</div>
+
+      {/* Legend for Pie */}
+      {chartType === 'pie' && statusDistribution?.length > 0 && (
         <div className="flex items-center justify-center space-x-6 mt-4">
           {statusDistribution?.map((item, index) => (
             <div key={index} className="flex items-center space-x-2">
-              <div 
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: item?.color }}
-              />
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item?.color }} />
               <span className="text-sm text-foreground">{item?.name}</span>
               <span className="text-sm font-medium text-foreground">{item?.value}%</span>
             </div>
           ))}
         </div>
       )}
-      {/* Chart Insights */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-border">
-        <div className="text-center">
-          <div className="text-2xl font-bold text-success">94.2%</div>
-          <div className="text-sm text-muted-foreground">Asistencia Promedio</div>
+
+      {/* Insights */}
+      {!loading && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-border">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-success">{insights.attendance}%</div>
+            <div className="text-sm text-muted-foreground">Asistencia Promedio</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-warning">{insights.late}%</div>
+            <div className="text-sm text-muted-foreground">Tardanzas</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-primary">{insights.overtime}h</div>
+            <div className="text-sm text-muted-foreground">Horas Extra Promedio</div>
+          </div>
         </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-warning">6.8%</div>
-          <div className="text-sm text-muted-foreground">Tardanzas</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-primary">12.5h</div>
-          <div className="text-sm text-muted-foreground">Horas Extra Promedio</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

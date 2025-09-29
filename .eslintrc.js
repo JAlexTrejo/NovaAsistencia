@@ -2,61 +2,49 @@ module.exports = {
   env: {
     browser: true,
     es2021: true,
-    node: true
+    node: true,
   },
   extends: [
-    'eslint:recommended',
-    '@eslint/js/recommended',
-    'plugin:react/recommended',
-    'plugin:react-hooks/recommended',
-    'plugin:react/jsx-runtime',
-    'prettier'
+    "eslint:recommended",
+    "@eslint/js/recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended",
+    "plugin:react/jsx-runtime",
+    "prettier",
   ],
-  plugins: [
-    'react',
-    'react-hooks',
-    'react-refresh'
-  ],
+  plugins: ["react", "react-hooks", "react-refresh", "security"],
   parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
+    ecmaVersion: "latest",
+    sourceType: "module",
     ecmaFeatures: {
-      jsx: true
-    }
+      jsx: true,
+    },
   },
   settings: {
     react: {
-      version: 'detect'
-    }
+      version: "detect",
+    },
   },
   rules: {
-    'react/prop-types': 'off',
-    'react/react-in-jsx-scope': 'off',
-    'react-refresh/only-export-components': [
-      'warn',
-      { allowConstantExport: true }
+    "react/prop-types": "off",
+    "react/react-in-jsx-scope": "off",
+    "react-refresh/only-export-components": [
+      "warn",
+      { allowConstantExport: true },
     ],
-    'no-unused-vars': [
-      'warn',
-      {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_'
-      }
+    "no-unused-vars": [
+      "warn",
+      { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
     ],
-    'no-console': [
-      'warn',
-      {
-        allow: ['warn', 'error']
-      }
+    "no-console": [
+      "error", // 🚨 Bloquea console.log en producción
+      { allow: ["warn", "error"] },
     ],
-    'prefer-const': 'warn',
-    'react-hooks/rules-of-hooks': 'error',
-    'react-hooks/exhaustive-deps': 'warn'
+    "prefer-const": "warn",
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    // Seguridad adicional
+    "security/detect-object-injection": "warn",
   },
-  ignorePatterns: [
-    'dist',
-    '.eslintrc.js',
-    'vite.config.js',
-    '*.test.js'
-  ]
+  ignorePatterns: ["dist", "vite.config.js", "*.test.js"],
 };

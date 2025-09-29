@@ -1,302 +1,235 @@
+// src/services/payrollService.js
 import { supabase } from '@/lib/supabase';
 import { adaptSupabaseError } from '@/utils/errors';
 
 const ok   = (data) => ({ ok: true, data });
 const fail = (e)    => ({ ok: false, ...adaptSupabaseError(e) });
 
+// ------------------------------
+// Helpers de fechas (semana lun-dom)
+// ------------------------------
+export function getWeekBounds(fromDateStr = null) {
+  const base = fromDateStr ? new Date(fromDateStr) : new Date();
+  const d = new Date(base);
+  const day = (d.getDay() + 6) % 7; // lunes = 0
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - day);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const toISO = (x) => x.toISOString().slice(0, 10);
+  return { start: toISO(monday), end: toISO(sunday) };
+}
+
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// ---------------------------------------------------------------------
+// Capa principal (estimaciones + cálculos semanales basados en asistencia)
+// ---------------------------------------------------------------------
 export const payrollService = {
-  // --------------------------------------------
-  // 1) Cálculo semanal (RPC)
-  // --------------------------------------------
-  async calculateWeeklyPayroll(employeeId, startDate, endDate) {
+  /**
+   * Obtiene una estimación semanal guardada (payroll_estimations).
+   */
+  async getWeeklyEstimation(employeeId, startDate, endDate) {
     try {
-      const { data, error } = await supabase.rpc('calculate_weekly_payroll', {
-        p_employee_id: employeeId,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      });
+      const { data, error } = await supabase
+        .from('payroll_estimations')
+        .select('*')
+        .eq('employee_id', employeeId)
+        .eq('week_start', startDate)
+        .eq('week_end', endDate)
+        .maybeSingle();
 
       if (error) return fail(error);
-
-      const r = (data && data[0]) || {};
-      const mapped = {
-        employeeId: r?.empleado_id ?? employeeId,
-        workedDays: Number(r?.dias_trabajados ?? 0),
-        regularHours: Number(r?.horas_regulares ?? 0),
-        overtimeHours: Number(r?.horas_extra ?? 0),
-        basePay: Number(r?.salario_base ?? 0),
-        overtimePay: Number(r?.pago_horas_extra ?? 0),
-        grossPay: Number(r?.salario_bruto ?? 0),
-      };
-      return ok(mapped);
+      return ok(data || null);
     } catch (e) {
       return fail(e);
     }
   },
 
-  // --------------------------------------------
-  // 2) Obtener registro de nómina (por empleado + semana)
-  // --------------------------------------------
-  async getPayrollRecord(employeeId, startDate) {
+  /**
+   * Calcula estimación semanal desde attendance_records + employee_profiles
+   * SIN escribir en BD. Devuelve objeto listo para upsert en payroll_estimations.
+   */
+  async calculateFromAttendance(employeeId, startDate, endDate) {
     try {
-      const { data, error } = await supabase
-        .from('nominas')
-        .select(`
-          id,
-          empleado_id,
-          semana_inicio,
-          semana_fin,
-          dias_trabajados,
-          horas_regulares,
-          horas_extra,
-          salario_base,
-          pago_horas_extra,
-          bonificaciones,
-          deducciones,
-          salario_bruto,
-          salario_neto,
-          procesada,
-          procesada_por,
-          procesada_en,
-          empleados:empleado_id (
-            codigo_empleado,
-            user_profiles:user_id ( full_name )
-          )
-        `)
-        .eq('empleado_id', employeeId)
-        .eq('semana_inicio', startDate)
+      // 1) Perfil del empleado (tipo de salario / monto)
+      const { data: emp, error: empErr } = await supabase
+        .from('employee_profiles')
+        .select('id, salary_type, daily_salary, hourly_rate')
+        .eq('id', employeeId)
         .single();
+      if (empErr) return fail(empErr);
+      const salaryType = (emp?.salary_type || 'daily').toLowerCase(); // 'daily' | 'hourly' | 'project'
+      const daily = num(emp?.daily_salary);
+      const hourly = num(emp?.hourly_rate);
 
-      // Si no existe (PGRST116), devolvemos ok con null
-      if (error) {
-        if (error.code === 'PGRST116') return ok(null);
-        return fail(error);
+      // 2) Asistencia en el rango
+      const { data: att, error: attErr } = await supabase
+        .from('attendance_records')
+        .select('date, total_hours, overtime_hours, clock_in, clock_out')
+        .eq('employee_id', employeeId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true });
+      if (attErr) return fail(attErr);
+
+      const rows = att || [];
+      const workedDays = rows.filter((r) => r?.clock_in || num(r?.total_hours) > 0).length;
+      const regularHours = rows.reduce((s, r) => s + num(r?.total_hours), 0);
+      const overtimeHours = rows.reduce((s, r) => s + num(r?.overtime_hours), 0);
+
+      // 3) Reglas de pago simples (puedes sustituidas por RPC si lo prefieres)
+      let base_pay = 0;
+      let overtime_pay = 0;
+
+      if (salaryType === 'daily') {
+        base_pay = daily * workedDays;
+        // si además acumulas horas, puedes agregar in/out extras si aplica
+        // overtime por horas extra sobre esquema local
+        overtime_pay = overtimeHours * (daily / 8) * 1.5; // 1.5x
+      } else if (salaryType === 'hourly') {
+        base_pay = regularHours * hourly;
+        overtime_pay = overtimeHours * hourly * 1.5;
+      } else {
+        // 'project' -> por ahora considera sólo horas base
+        base_pay = daily * workedDays; // fallback razonable
+        overtime_pay = overtimeHours * (daily / 8) * 1.5;
       }
 
-      const mapped = {
-        id: data?.id,
-        employeeId: data?.empleado_id,
-        weekStart: data?.semana_inicio,
-        weekEnd: data?.semana_fin,
-        workedDays: Number(data?.dias_trabajados ?? 0),
-        regularHours: Number(data?.horas_regulares ?? 0),
-        overtimeHours: Number(data?.horas_extra ?? 0),
-        basePay: Number(data?.salario_base ?? 0),
-        overtimePay: Number(data?.pago_horas_extra ?? 0),
-        bonuses: Number(data?.bonificaciones ?? 0),
-        deductions: Number(data?.deducciones ?? 0),
-        grossPay: Number(data?.salario_bruto ?? 0),
-        netPay: Number(data?.salario_neto ?? 0),
-        processed: !!data?.procesada,
-        processedBy: data?.procesada_por,
-        processedAt: data?.procesada_en,
-        employee: {
-          code: data?.empleados?.codigo_empleado ?? null,
-          name: data?.empleados?.user_profiles?.full_name ?? null,
-        },
-      };
+      const bonuses = 0;
+      const deductions = 0;
+      const gross_total = base_pay + overtime_pay + bonuses;
+      const net_total = gross_total - deductions;
 
-      return ok(mapped);
+      return ok({
+        employee_id: employeeId,
+        week_start: startDate,
+        week_end: endDate,
+        regular_hours: regularHours,
+        overtime_hours: overtimeHours,
+        base_pay,
+        overtime_pay,
+        bonuses,
+        deductions,
+        gross_total,
+        net_total,
+        // Extras por si quieres mostrar
+        worked_days: workedDays,
+        salary_type: salaryType,
+      });
     } catch (e) {
       return fail(e);
     }
   },
 
-  // --------------------------------------------
-  // 3) Guardar/actualizar nómina (upsert)
-  // --------------------------------------------
-  async savePayrollRecord(payrollData) {
+  /**
+   * Upsert de la estimación semanal (payroll_estimations).
+   * Usa conflicto (employee_id, week_start, week_end).
+   */
+  async upsertWeeklyEstimation(estimation) {
     try {
       const payload = {
-        empleado_id: payrollData?.employeeId,
-        semana_inicio: payrollData?.weekStart,
-        semana_fin: payrollData?.weekEnd,
-        dias_trabajados: payrollData?.workedDays,
-        horas_regulares: payrollData?.regularHours,
-        horas_extra: payrollData?.overtimeHours,
-        salario_base: payrollData?.basePay,
-        pago_horas_extra: payrollData?.overtimePay,
-        bonificaciones: payrollData?.bonuses ?? 0,
-        deducciones: payrollData?.deductions ?? 0,
-        salario_bruto: payrollData?.grossPay,
-        salario_neto: payrollData?.netPay,
-        procesada: payrollData?.processed ?? false,
-        procesada_por: payrollData?.processedBy ?? null,
-        procesada_en: payrollData?.processedAt ?? null,
+        employee_id: estimation?.employee_id,
+        week_start: estimation?.week_start,
+        week_end: estimation?.week_end,
+        regular_hours: num(estimation?.regular_hours),
+        overtime_hours: num(estimation?.overtime_hours),
+        base_pay: num(estimation?.base_pay),
+        overtime_pay: num(estimation?.overtime_pay),
+        bonuses: num(estimation?.bonuses),
+        deductions: num(estimation?.deductions),
+        gross_total: num(estimation?.gross_total),
+        net_total: num(estimation?.net_total),
       };
 
       const { data, error } = await supabase
-        .from('nominas')
-        .upsert(payload, { onConflict: 'empleado_id,semana_inicio' })
-        .select('id,empleado_id,semana_inicio,semana_fin,salario_bruto,salario_neto,procesada,procesada_por,procesada_en')
+        .from('payroll_estimations')
+        .upsert(payload, { onConflict: 'employee_id,week_start,week_end' })
+        .select('*')
         .single();
 
       if (error) return fail(error);
-
-      const mapped = {
-        id: data?.id,
-        employeeId: data?.empleado_id,
-        weekStart: data?.semana_inicio,
-        weekEnd: data?.semana_fin,
-        grossPay: Number(data?.salario_bruto ?? 0),
-        netPay: Number(data?.salario_neto ?? 0),
-        processed: !!data?.procesada,
-        processedBy: data?.procesada_por ?? null,
-        processedAt: data?.procesada_en ?? null,
-      };
-
-      return ok(mapped);
+      return ok(data);
     } catch (e) {
       return fail(e);
     }
   },
 
-  // --------------------------------------------
-  // 4) Ajustes de nómina (listar)
-  // --------------------------------------------
-  async getPayrollAdjustments(employeeId, startDate, endDate) {
+  /**
+   * (Opcional) Persistir cálculo “final” (payroll_calculations) tipo weekly.
+   * Útil para “procesar nómina”.
+   */
+  async upsertWeeklyCalculation(calc, { calculatedBy = null, notes = null } = {}) {
     try {
-      const { data, error } = await supabase
-        .from('ajustes_nomina')
-        .select(`
-          id,
-          empleado_id,
-          nomina_id,
-          tipo,
-          categoria,
-          monto,
-          descripcion,
-          autorizado_por,
-          created_at,
-          user_profiles:autorizado_por ( full_name )
-        `)
-        .eq('empleado_id', employeeId)
-        .gte('created_at', startDate)
-        .lte('created_at', `${endDate}T23:59:59`)
-        .order('created_at', { ascending: false });
-
-      if (error) return fail(error);
-
-      const mapped = (data || []).map((adj) => ({
-        id: adj?.id,
-        type: adj?.tipo,
-        category: adj?.categoria,
-        amount: Number(adj?.monto ?? 0),
-        description: adj?.descripcion,
-        authorizedBy: adj?.user_profiles?.full_name || 'Desconocido',
-        createdAt: adj?.created_at,
-        payrollId: adj?.nomina_id ?? null,
-      }));
-
-      return ok(mapped);
-    } catch (e) {
-      return fail(e);
-    }
-  },
-
-  // --------------------------------------------
-  // 5) Agregar ajuste
-  // --------------------------------------------
-  async addPayrollAdjustment(adjustmentData) {
-    try {
-      const insert = {
-        empleado_id: adjustmentData?.employeeId,
-        nomina_id: adjustmentData?.payrollId ?? null,
-        tipo: adjustmentData?.type,
-        categoria: adjustmentData?.category,
-        monto: adjustmentData?.amount,
-        descripcion: adjustmentData?.description,
-        autorizado_por: adjustmentData?.authorizedBy,
+      const payload = {
+        employee_id: calc?.employee_id,
+        calculation_date: calc?.calculation_date || new Date().toISOString().slice(0, 10),
+        calculation_type: 'weekly',
+        regular_hours: num(calc?.regular_hours),
+        overtime_hours: num(calc?.overtime_hours),
+        base_pay: num(calc?.base_pay),
+        overtime_pay: num(calc?.overtime_pay),
+        christmas_bonus: num(calc?.christmas_bonus),
+        performance_bonus: num(calc?.performance_bonus),
+        attendance_bonus: num(calc?.attendance_bonus),
+        other_bonuses: num(calc?.other_bonuses),
+        tax_deductions: num(calc?.tax_deductions),
+        social_security: num(calc?.social_security),
+        incident_deductions: num(calc?.incident_deductions),
+        other_deductions: num(calc?.other_deductions),
+        severance_days_worked: num(calc?.severance_days_worked),
+        severance_vacation_days: num(calc?.severance_vacation_days),
+        severance_proportional_benefits: num(calc?.severance_proportional_benefits),
+        gross_total: num(calc?.gross_total),
+        net_total: num(calc?.net_total),
+        calculated_by: calculatedBy,
+        notes: notes || calc?.notes || null,
       };
 
+      // No tenemos una clave única natural acá; si quisieras evitar duplicados por semana,
+      // agrega una unique partial index en DB o guarda “periodo” como notas y realiza upsert con RPC.
       const { data, error } = await supabase
-        .from('ajustes_nomina')
-        .insert(insert)
-        .select('id,tipo,categoria,monto,descripcion,nomina_id,empleado_id,autorizado_por,created_at')
+        .from('payroll_calculations')
+        .insert(payload)
+        .select('*')
         .single();
 
       if (error) return fail(error);
-
-      const mapped = {
-        id: data?.id,
-        type: data?.tipo,
-        category: data?.categoria,
-        amount: Number(data?.monto ?? 0),
-        description: data?.descripcion,
-        payrollId: data?.nomina_id ?? null,
-        employeeId: data?.empleado_id ?? null,
-        authorizedBy: data?.autorizado_por ?? null,
-        createdAt: data?.created_at ?? null,
-      };
-
-      return ok(mapped);
+      return ok(data);
     } catch (e) {
       return fail(e);
     }
   },
 
-  // --------------------------------------------
-  // 6) Marcar nómina como procesada
-  // --------------------------------------------
-  async processPayroll(payrollId, userId) {
-    try {
-      const { data, error } = await supabase
-        .from('nominas')
-        .update({
-          procesada: true,
-          procesada_por: userId,
-          procesada_en: new Date().toISOString(),
-        })
-        .eq('id', payrollId)
-        .select('id,procesada,procesada_por,procesada_en')
-        .single();
-
-      if (error) return fail(error);
-
-      const mapped = {
-        id: data?.id,
-        processed: !!data?.procesada,
-        processedBy: data?.procesada_por ?? null,
-        processedAt: data?.procesada_en ?? null,
-      };
-
-      return ok(mapped);
-    } catch (e) {
-      return fail(e);
-    }
-  },
-
-  // --------------------------------------------
-  // 7) Resumen de nómina (por semana)
-  //    Si pasas endDate, filtramos por rango; si no, por semana_inicio == startDate
-  // --------------------------------------------
+  /**
+   * Resumen de nómina desde payroll_estimations (rango o semana puntual).
+   */
   async getPayrollSummary(startDate, endDate = null) {
     try {
       let query = supabase
-        .from('nominas')
+        .from('payroll_estimations')
         .select(`
           id,
-          empleado_id,
-          semana_inicio,
-          semana_fin,
-          dias_trabajados,
-          horas_regulares,
-          horas_extra,
-          salario_bruto,
-          salario_neto,
-          procesada,
-          empleados:empleado_id (
-            codigo_empleado,
-            user_profiles:user_id ( full_name ),
-            obras:obra_id ( nombre )
-          )
+          employee_id,
+          week_start,
+          week_end,
+          regular_hours,
+          overtime_hours,
+          base_pay,
+          overtime_pay,
+          bonuses,
+          deductions,
+          gross_total,
+          net_total,
+          employee_profiles:employee_id ( full_name, employee_id:employee_id )
         `)
-        .order('salario_bruto', { ascending: false });
+        .order('gross_total', { ascending: false });
 
       if (endDate) {
-        query = query.gte('semana_inicio', startDate).lte('semana_fin', endDate);
+        query = query.gte('week_start', startDate).lte('week_end', endDate);
       } else {
-        query = query.eq('semana_inicio', startDate);
+        query = query.eq('week_start', startDate);
       }
 
       const { data, error } = await query;
@@ -304,18 +237,19 @@ export const payrollService = {
 
       const mapped = (data || []).map((r) => ({
         id: r?.id,
-        employeeId: r?.empleado_id,
-        employeeCode: r?.empleados?.codigo_empleado ?? null,
-        employeeName: r?.empleados?.user_profiles?.full_name ?? null,
-        site: r?.empleados?.obras?.nombre ?? null,
-        workedDays: Number(r?.dias_trabajados ?? 0),
-        regularHours: Number(r?.horas_regulares ?? 0),
-        overtimeHours: Number(r?.horas_extra ?? 0),
-        grossPay: Number(r?.salario_bruto ?? 0),
-        netPay: Number(r?.salario_neto ?? 0),
-        processed: !!r?.procesada,
-        weekStart: r?.semana_inicio,
-        weekEnd: r?.semana_fin,
+        employeeId: r?.employee_id,
+        employeeCode: r?.employee_profiles?.employee_id ?? null,
+        employeeName: r?.employee_profiles?.full_name ?? null,
+        regularHours: num(r?.regular_hours),
+        overtimeHours: num(r?.overtime_hours),
+        basePay: num(r?.base_pay),
+        overtimePay: num(r?.overtime_pay),
+        bonuses: num(r?.bonuses),
+        deductions: num(r?.deductions),
+        grossPay: num(r?.gross_total),
+        netPay: num(r?.net_total),
+        weekStart: r?.week_start,
+        weekEnd: r?.week_end,
       }));
 
       return ok(mapped);
@@ -324,22 +258,54 @@ export const payrollService = {
     }
   },
 
-  // --------------------------------------------
-  // 8) Eliminar ajuste
-  // --------------------------------------------
-  async deletePayrollAdjustment(adjustmentId) {
-    try {
-      const { error } = await supabase
-        .from('ajustes_nomina')
-        .delete()
-        .eq('id', adjustmentId);
-
-      if (error) return fail(error);
-      return ok(true);
-    } catch (e) {
-      return fail(e);
-    }
+  /**
+   * “Cálculo semanal” compatible con tu página (wrapper que calcula desde asistencia).
+   */
+  async calculateWeeklyPayroll(employeeId, startDate, endDate) {
+    // devolvemos lo calculado (no persiste)
+    return this.calculateFromAttendance(employeeId, startDate, endDate);
   },
 };
+
+// ===================================================================================
+// EXPORTS de compatibilidad (lo que esperan otras partes del frontend)
+// ===================================================================================
+
+/**
+ * Devuelve resumen de nómina de la semana actual (o rango si pasas ambos).
+ */
+export async function getCurrentWeekPayroll(startDate = null, endDate = null) {
+  const rng = startDate && endDate ? { start: startDate, end: endDate } : getWeekBounds();
+  return payrollService.getPayrollSummary(rng.start, rng.end);
+}
+
+/**
+ * Reexport: cálculo semanal (sin persistir), usado por páginas.
+ */
+export const calculateWeeklyPayroll = (employeeId, startDate, endDate) =>
+  payrollService.calculateWeeklyPayroll(employeeId, startDate, endDate);
+
+/**
+ * Cálculo en lote: calcula desde asistencia y guarda/actualiza la estimación semanal.
+ */
+export async function bulkCalculatePayroll(employeeIds = [], startDate, endDate) {
+  const results = [];
+  for (const employeeId of employeeIds) {
+    try {
+      // 1) calcular desde asistencia
+      const calc = await payrollService.calculateFromAttendance(employeeId, startDate, endDate);
+      if (!calc.ok) {
+        results.push({ employeeId, ok: false, ...calc });
+        continue;
+      }
+      // 2) upsert estimación
+      const up = await payrollService.upsertWeeklyEstimation(calc.data);
+      results.push({ employeeId, ok: up.ok, data: up.data, ...(up.ok ? {} : up) });
+    } catch (e) {
+      results.push({ employeeId, ok: false, ...adaptSupabaseError(e) });
+    }
+  }
+  return ok(results);
+}
 
 export default payrollService;

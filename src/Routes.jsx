@@ -1,7 +1,14 @@
-import React from "react";
-import { BrowserRouter, Routes as RouterRoutes, Route, Navigate } from "react-router-dom";
-import ErrorBoundary from './components/ErrorBoundary';
-import ScrollToTop from './components/ScrollToTop';
+// src/Routes.jsx
+import React, { Suspense } from "react";
+import {
+  BrowserRouter,
+  Routes as RouterRoutes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
+import ScrollToTop from "./components/ScrollToTop";
 import { useAuth } from "./contexts/AuthContext";
 
 // Page imports
@@ -35,9 +42,20 @@ import ComprehensiveEmployeeRegistrationAndProfileManagement from "./pages/compr
 import ProductionEnvironmentConfigurationDashboard from "./pages/production-environment-configuration-dashboard";
 import EnterpriseCodeQualityAndTestingCenter from "./pages/enterprise-code-quality-and-testing-center";
 
-// Route Protection Component
+// Production Hardening Pages
+import ProductionDataServicesAndErrorHandlingManagementConsole from "./pages/production-data-services-and-error-handling-management-console";
+import EnterpriseSecurityAndRbacImplementationCenter from "./pages/enterprise-security-and-rbac-implementation-center";
+
+// NEW IMPORT - Performance Optimization and Production Deployment Center
+import PerformanceOptimizationAndProductionDeploymentCenter from "./pages/performance-optimization-and-production-deployment-center";
+
+// Password reset page — RUTA EXACTA A TU ARCHIVO
+import AuthReset from "./auth/Reset.jsx";
+
+// --- ProtectedRoute con soporte de `next` ---
 function ProtectedRoute({ children, requiredRole = null }) {
   const { user, userProfile, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -51,31 +69,29 @@ function ProtectedRoute({ children, requiredRole = null }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  // Check if user profile exists and is complete
   if (!userProfile) {
     return <Navigate to="/profile-center" replace />;
   }
 
-  // Role-based access control
   if (requiredRole) {
     const userRole = userProfile?.role;
-    const hasAccess = 
-      userRole === requiredRole || 
-      (requiredRole === 'admin' && ['admin', 'superadmin']?.includes(userRole)) ||
-      (requiredRole === 'supervisor' && ['supervisor', 'admin', 'superadmin']?.includes(userRole)) ||
-      userRole === 'superadmin'; // SuperAdmin has access to everything
+    const hasAccess =
+      userRole === requiredRole ||
+      (requiredRole === "admin" && ["admin", "superadmin"].includes(userRole)) ||
+      (requiredRole === "supervisor" && ["supervisor", "admin", "superadmin"].includes(userRole)) ||
+      userRole === "superadmin";
 
     if (!hasAccess) {
-      // Redirect to appropriate default page based on user role
       switch (userRole) {
-        case 'superadmin':
+        case "superadmin":
           return <Navigate to="/admin/system" replace />;
-        case 'admin':
+        case "admin":
           return <Navigate to="/admin/employees" replace />;
-        case 'supervisor':
+        case "supervisor":
           return <Navigate to="/supervisor/sites" replace />;
         default:
           return <Navigate to="/dashboard" replace />;
@@ -89,258 +105,276 @@ function ProtectedRoute({ children, requiredRole = null }) {
 // Main routing component
 function AppRoutes() {
   return (
-    <RouterRoutes>
-      {/* Public Routes */}
-      <Route path="/login" element={<EmployeeLoginPortal />} />
-      
-      {/* Profile Management - Accessible to all authenticated users */}
-      <Route 
-        path="/profile-center" 
-        element={
-          <ProtectedRoute>
-            <UserProfileManagementAndAuthenticationCenter />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Employee Routes - Basic user access */}
-      <Route 
-        path="/dashboard" 
-        element={
-          <ProtectedRoute>
-            <EmployeeAttendanceDashboard />
-          </ProtectedRoute>
-        } 
-      />
+    <Suspense fallback={<div className="p-6">Cargando…</div>}>
+      <RouterRoutes>
+        {/* Public Routes */}
+        <Route path="/login" element={<EmployeeLoginPortal />} />
+        <Route path="/employee-login-portal" element={<EmployeeLoginPortal />} />
 
-      {/* Personalized Worker Dashboard - Enhanced worker view */}
-      <Route 
-        path="/personalized-worker-dashboard-with-site-integration-and-team-collaboration" 
-        element={
-          <ProtectedRoute requiredRole="user">
-            <PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Supervisor Routes */}
-      <Route 
-        path="/supervisor/sites" 
-        element={
-          <ProtectedRoute requiredRole="supervisor">
-            <ConstructionSiteAndSupervisorManagementHub />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Administrator Routes */}
-      <Route 
-        path="/admin/employees" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <AdministratorEmployeeManagementConsole />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Password reset callback (Supabase) */}
+        <Route path="/auth/reset" element={<AuthReset />} />
 
-      {/* Enhanced Employee Management with Deletion Controls */}
-      <Route 
-        path="/enhanced-employee-management-console-with-deletion-controls" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <EnhancedEmployeeManagementConsoleWithDeletionControls />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Profile Management - Accessible to all authenticated users */}
+        <Route
+          path="/profile-center"
+          element={
+            <ProtectedRoute>
+              <UserProfileManagementAndAuthenticationCenter />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Real-Time Payroll Estimation Dashboard */}
-      <Route 
-        path="/real-time-payroll-estimation-dashboard-with-zero-state-handling" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <RealTimePayrollEstimationDashboardWithZeroStateHandling />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Employee Routes */}
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <EmployeeAttendanceDashboard />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Enhanced Employee Payroll Management */}
-      <Route 
-        path="/enhanced-employee-payroll-management-with-detailed-calculations" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <EnhancedEmployeePayrollManagementWithDetailedCalculations />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Personalized Worker Dashboard */}
+        <Route
+          path="/personalized-worker-dashboard-with-site-integration-and-team-collaboration"
+          element={
+            <ProtectedRoute requiredRole="user">
+              <PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Advanced Payroll Calculation Engine */}
-      <Route 
-        path="/advanced-payroll-calculation-engine-with-comprehensive-wage-management" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <AdvancedPayrollCalculationEngineWithComprehensiveWageManagement />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Supervisor Routes */}
+        <Route
+          path="/supervisor/sites"
+          element={
+            <ProtectedRoute requiredRole="supervisor">
+              <ConstructionSiteAndSupervisorManagementHub />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Role-Based Permission Enforcement System */}
-      <Route 
-        path="/role-based-permission-enforcement-and-security-management-system" 
-        element={
-          <ProtectedRoute requiredRole="superadmin">
-            <RoleBasedPermissionEnforcementAndSecurityManagementSystem />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Administrator Routes */}
+        <Route
+          path="/admin/employees"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdministratorEmployeeManagementConsole />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* NEW ROUTE - Obras Financial Control Management - Admin and SuperAdmin Only */}
-      <Route 
-        path="/admin/obras-financiero" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <ObrasFinancialControlManagement />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Enhanced Employee Management with Deletion Controls */}
+        <Route
+          path="/enhanced-employee-management-console-with-deletion-controls"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <EnhancedEmployeeManagementConsoleWithDeletionControls />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Production Deployment and Infrastructure Management - SuperAdmin Only */}
-      <Route 
-        path="/production-deployment-and-infrastructure-management" 
-        element={
-          <ProtectedRoute requiredRole="superadmin">
-            <ProductionDeploymentAndInfrastructureManagement />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Real-Time Payroll Estimation Dashboard */}
+        <Route
+          path="/real-time-payroll-estimation-dashboard-with-zero-state-handling"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <RealTimePayrollEstimationDashboardWithZeroStateHandling />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Production Authentication and Employee Registration */}
-      <Route 
-        path="/production-authentication-management-system" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <ProductionAuthenticationManagementSystem />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Enhanced Employee Payroll Management */}
+        <Route
+          path="/enhanced-employee-payroll-management-with-detailed-calculations"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <EnhancedEmployeePayrollManagementWithDetailedCalculations />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route 
-        path="/comprehensive-employee-registration-and-profile-management" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <ComprehensiveEmployeeRegistrationAndProfileManagement />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Advanced Payroll Calculation Engine */}
+        <Route
+          path="/advanced-payroll-calculation-engine-with-comprehensive-wage-management"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdvancedPayrollCalculationEngineWithComprehensiveWageManagement />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* NEW ROUTES - Production Database and Code Quality Management */}
-      <Route 
-        path="/production-database-schema-management-console" 
-        element={
-          <ProtectedRoute requiredRole="superadmin">
-            <ProductionDatabaseSchemaManagementConsole />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Role-Based Permission Enforcement System */}
+        <Route
+          path="/role-based-permission-enforcement-and-security-management-system"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <RoleBasedPermissionEnforcementAndSecurityManagementSystem />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route 
-        path="/frontend-architecture-and-code-quality-dashboard" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <FrontendArchitectureAndCodeQualityDashboard />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Obras Financial Control Management */}
+        <Route
+          path="/admin/obras-financiero"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <ObrasFinancialControlManagement />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Production Environment and Code Quality */}
-      <Route 
-        path="/production-environment-configuration-dashboard" 
-        element={
-          <ProtectedRoute requiredRole="superadmin">
-            <ProductionEnvironmentConfigurationDashboard />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Production Deployment and Infrastructure Management */}
+        <Route
+          path="/production-deployment-and-infrastructure-management"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <ProductionDeploymentAndInfrastructureManagement />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route 
-        path="/enterprise-code-quality-and-testing-center" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <EnterpriseCodeQualityAndTestingCenter />
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/admin/attendance" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <AttendanceHistoryAndAnalyticsDashboard />
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/admin/payroll" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <PayrollCalculationAndManagementInterface />
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/admin/incidents" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <IncidentRegistrationAndManagementSystem />
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/admin/reports" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <ComprehensiveReportingAndExportCenter />
-          </ProtectedRoute>
-        } 
-      />
+        {/* Performance Optimization and Production Deployment Center */}
+        <Route
+          path="/performance-optimization-and-production-deployment-center"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <PerformanceOptimizationAndProductionDeploymentCenter />
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Activity Logging - Admin and SuperAdmin access */}
-      <Route 
-        path="/activity-logging-and-security-monitoring-dashboard" 
-        element={
-          <ProtectedRoute requiredRole="admin">
-            <ActivityLoggingAndSecurityMonitoringDashboard />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* SuperAdmin Routes */}
-      <Route 
-        path="/admin/system" 
-        element={
-          <ProtectedRoute requiredRole="superadmin">
-            <SystemAdministrationAndConfigurationPanel />
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/admin/roles" 
-        element={
-          <ProtectedRoute requiredRole="superadmin">
-            <RoleBasedAccessControlManagementSystem />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Default Redirects */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      
-      {/* 404 Route */}
-      <Route path="*" element={<NotFound />} />
-    </RouterRoutes>
+        {/* Production Authentication and Employee Registration */}
+        <Route
+          path="/production-authentication-management-system"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <ProductionAuthenticationManagementSystem />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/comprehensive-employee-registration-and-profile-management"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <ComprehensiveEmployeeRegistrationAndProfileManagement />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Production Database and Code Quality Management */}
+        <Route
+          path="/production-database-schema-management-console"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <ProductionDatabaseSchemaManagementConsole />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/frontend-architecture-and-code-quality-dashboard"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <FrontendArchitectureAndCodeQualityDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Production Environment and Code Quality */}
+        <Route
+          path="/production-environment-configuration-dashboard"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <ProductionEnvironmentConfigurationDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/enterprise-code-quality-and-testing-center"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <EnterpriseCodeQualityAndTestingCenter />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Production Hardening */}
+        <Route
+          path="/production-data-services-and-error-handling-management-console"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <ProductionDataServicesAndErrorHandlingManagementConsole />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/enterprise-security-and-rbac-implementation-center"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <EnterpriseSecurityAndRbacImplementationCenter />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Admin */}
+        <Route
+          path="/admin/attendance"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AttendanceHistoryAndAnalyticsDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/payroll"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <PayrollCalculationAndManagementInterface />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/incidents"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <IncidentRegistrationAndManagementSystem />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/reports"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <ComprehensiveReportingAndExportCenter />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* SuperAdmin */}
+        <Route
+          path="/admin/system"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <SystemAdministrationAndConfigurationPanel />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/roles"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <RoleBasedAccessControlManagementSystem />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Default Redirects */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+
+        {/* 404 */}
+        <Route path="*" element={<NotFound />} />
+      </RouterRoutes>
+    </Suspense>
   );
 }
 

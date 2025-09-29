@@ -1,13 +1,14 @@
+// src/administrator-employee-management-console/EmployeeTable.jsx
 import React, { useState } from 'react';
 import Icon from '../../../components/AppIcon';
 import Image from '../../../components/AppImage';
 import Button from '../../../components/ui/Button';
 
-const EmployeeTable = ({ 
-  employees, 
-  selectedEmployees, 
-  onEmployeeSelect, 
-  onSelectAll, 
+const EmployeeTable = ({
+  employees,
+  selectedEmployees,
+  onEmployeeSelect,
+  onSelectAll,
   onEmployeeClick,
   onSort,
   sortConfig,
@@ -15,49 +16,46 @@ const EmployeeTable = ({
   onRestore,
   userRole = 'admin',
   showDeleteActions = false,
-  loading = false
+  loading = false,
 }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
 
   const getStatusColor = (status) => {
     const colors = {
-      'active': 'bg-success text-success-foreground',
-      'inactive': 'bg-secondary text-secondary-foreground',
-      'suspended': 'bg-warning text-warning-foreground',
-      'terminated': 'bg-error text-error-foreground',
-      'deleted': 'bg-red-100 text-red-800'
+      active: 'bg-success text-success-foreground',
+      inactive: 'bg-secondary text-secondary-foreground',
+      suspended: 'bg-warning text-warning-foreground',
+      terminated: 'bg-error text-error-foreground',
+      deleted: 'bg-red-100 text-red-800',
     };
     return colors?.[status] || colors?.inactive;
   };
 
   const getStatusLabel = (status) => {
     const labels = {
-      'active': 'Activo',
-      'inactive': 'Inactivo',
-      'suspended': 'Suspendido',
-      'terminated': 'Terminado',
-      'deleted': 'Eliminado'
+      active: 'Activo',
+      inactive: 'Inactivo',
+      suspended: 'Suspendido',
+      terminated: 'Terminado',
+      deleted: 'Eliminado',
     };
-    return labels?.[status] || status;
+    return labels?.[status] || status || '—';
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString)?.toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const formatLastAttendance = (lastAttendance) => {
     if (!lastAttendance) return 'Sin registro';
-    
     const date = new Date(lastAttendance);
+    if (Number.isNaN(date.getTime())) return 'Sin registro';
     const now = new Date();
     const diffTime = Math.abs(now - date);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
     if (diffDays === 1) return 'Ayer';
     if (diffDays <= 7) return `Hace ${diffDays} días`;
     return formatDate(lastAttendance);
@@ -65,7 +63,7 @@ const EmployeeTable = ({
 
   const handleSort = (column) => {
     const direction = sortConfig?.column === column && sortConfig?.direction === 'asc' ? 'desc' : 'asc';
-    onSort({ column, direction });
+    onSort?.({ column, direction });
   };
 
   const getSortIcon = (column) => {
@@ -76,14 +74,37 @@ const EmployeeTable = ({
   const isAllSelected = employees?.length > 0 && selectedEmployees?.length === employees?.length;
   const isIndeterminate = selectedEmployees?.length > 0 && selectedEmployees?.length < employees?.length;
 
-  // Helper function to handle employee row click
+  // Click fila (evita clics en botones)
   const handleEmployeeRowClick = (employee, event) => {
-    // Prevent row click when clicking on action buttons
-    if (event?.target?.closest('button') || event?.target?.closest('.action-button')) {
-      return;
-    }
+    if (event?.target?.closest('button') || event?.target?.closest('.action-button')) return;
     onEmployeeClick?.(employee);
   };
+
+  // Helpers de compatibilidad (nombres distintos según servicio/joins)
+  const getEmployeeId = (e) => e?.employee_id ?? e?.employeeId ?? e?.id ?? 'N/A';
+  const getFullName = (e) => e?.full_name ?? e?.name ?? e?.nombre ?? 'Sin nombre';
+  const getEmail = (e) =>
+    e?.user_profiles?.email ??
+    e?.email ??
+    e?.correo ??
+    e?.user?.email ??
+    'Sin email';
+  const getAvatar = (e) => e?.profile_picture_url ?? e?.avatar ?? null;
+  const getSiteName = (e) =>
+    e?.construction_sites?.name ??
+    e?.construction_site?.name ??
+    e?.obras?.nombre ??
+    e?.sitio_asignado ??
+    e?.site ??
+    'Sin asignar';
+  const getSupervisorName = (e) =>
+    e?.supervisor?.full_name ??
+    e?.supervisor?.nombre ??
+    e?.supervisor_name ??
+    e?.supervisor ??
+    'Sin supervisor';
+  const getHireDate = (e) => e?.hire_date ?? e?.hireDate ?? e?.fecha_contratacion ?? null;
+  const getLastAttendance = (e) => e?.last_attendance_date ?? e?.lastAttendance ?? null;
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -111,7 +132,7 @@ const EmployeeTable = ({
                   className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
                 />
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('employee_id')}
@@ -121,7 +142,7 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('employee_id')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('full_name')}
@@ -131,7 +152,7 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('full_name')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('site')}
@@ -141,7 +162,7 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('site')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('supervisor')}
@@ -151,7 +172,7 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('supervisor')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('hire_date')}
@@ -161,7 +182,7 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('hire_date')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('status')}
@@ -171,7 +192,7 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('status')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-left p-4">
                 <button
                   onClick={() => handleSort('last_attendance_date')}
@@ -181,193 +202,189 @@ const EmployeeTable = ({
                   <Icon name={getSortIcon('last_attendance_date')} size={14} />
                 </button>
               </th>
-              
+
               <th className="text-center p-4 w-32">
                 <span className="text-sm font-medium text-foreground">Acciones</span>
               </th>
             </tr>
           </thead>
-          
+
           <tbody>
-            {employees?.map((employee) => (
-              <tr
-                key={employee?.id}
-                className={`
-                  border-b border-border hover:bg-muted/30 transition-colors duration-150 ease-out-cubic cursor-pointer
-                  ${selectedEmployees?.includes(employee?.id) ? 'bg-primary/5' : ''}
-                  ${employee?.status === 'deleted' ? 'bg-red-50' : ''}
-                `}
-                onMouseEnter={() => setHoveredRow(employee?.id)}
-                onMouseLeave={() => setHoveredRow(null)}
-                onClick={(e) => handleEmployeeRowClick(employee, e)}
-              >
-                <td className="p-4" onClick={(e) => e?.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedEmployees?.includes(employee?.id)}
-                    onChange={(e) => onEmployeeSelect?.(employee?.id, e?.target?.checked)}
-                    className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
-                  />
-                </td>
-                
-                <td className="p-4">
-                  <span className="text-sm font-mono text-muted-foreground">
-                    {employee?.employee_id || employee?.employeeId || 'N/A'}
-                  </span>
-                </td>
-                
-                <td className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0">
-                      {employee?.profile_picture_url || employee?.avatar ? (
-                        <Image
-                          src={employee?.profile_picture_url || employee?.avatar}
-                          alt={employee?.full_name || employee?.name}
-                          className="w-8 h-8 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium">
-                          {(employee?.full_name || employee?.name || '')?.split(' ')?.map(n => n?.[0])?.join('')?.toUpperCase()}
-                        </div>
+            {employees?.map((employee) => {
+              const id = employee?.id;
+              const empId = getEmployeeId(employee);
+              const name = getFullName(employee);
+              const email = getEmail(employee);
+              const avatar = getAvatar(employee);
+              const siteName = getSiteName(employee);
+              const supervisorName = getSupervisorName(employee);
+              const hireDate = getHireDate(employee);
+              const lastAttendance = getLastAttendance(employee);
+
+              return (
+                <tr
+                  key={id}
+                  className={`
+                    border-b border-border hover:bg-muted/30 transition-colors duration-150 ease-out-cubic cursor-pointer
+                    ${selectedEmployees?.includes(id) ? 'bg-primary/5' : ''}
+                    ${employee?.status === 'deleted' ? 'bg-red-50' : ''}
+                  `}
+                  onMouseEnter={() => setHoveredRow(id)}
+                  onMouseLeave={() => setHoveredRow(null)}
+                  onClick={(e) => handleEmployeeRowClick(employee, e)}
+                >
+                  <td className="p-4" onClick={(e) => e?.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedEmployees?.includes(id)}
+                      onChange={(e) => onEmployeeSelect?.(id, e?.target?.checked)}
+                      className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                    />
+                  </td>
+
+                  <td className="p-4">
+                    <span className="text-sm font-mono text-muted-foreground">{empId}</span>
+                  </td>
+
+                  <td className="p-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex-shrink-0">
+                        {avatar ? (
+                          <Image src={avatar} alt={name} className="w-8 h-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium">
+                            {String(name || '')
+                              .split(' ')
+                              .map((n) => n?.[0])
+                              .join('')
+                              .toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate">{name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{email}</p>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Icon name="MapPin" size={14} className="text-muted-foreground" />
+                      <span className="text-sm text-foreground">{siteName}</span>
+                    </div>
+                  </td>
+
+                  <td className="p-4">
+                    <span className="text-sm text-foreground">{supervisorName}</span>
+                  </td>
+
+                  <td className="p-4">
+                    <span className="text-sm text-muted-foreground">{formatDate(hireDate)}</span>
+                  </td>
+
+                  <td className="p-4">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(employee?.status)}`}>
+                      {getStatusLabel(employee?.status)}
+                    </span>
+                  </td>
+
+                  <td className="p-4">
+                    <span className="text-sm text-muted-foreground">{formatLastAttendance(lastAttendance)}</span>
+                  </td>
+
+                  <td className="p-4" onClick={(e) => e?.stopPropagation()}>
+                    <div className="flex items-center justify-center space-x-1 action-button">
+                      {/* View */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onEmployeeClick?.(employee)}
+                        iconName="Eye"
+                        iconSize={16}
+                        className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
+                        title="Ver detalles"
+                      />
+
+                      {hoveredRow === id && (
+                        <>
+                          {/* Edit */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e?.stopPropagation();
+                              onEmployeeClick?.(employee);
+                            }}
+                            iconName="Edit"
+                            iconSize={16}
+                            className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
+                            title="Editar empleado"
+                          />
+
+                          {/* Delete / Restore */}
+                          {showDeleteActions && (
+                            <>
+                              {employee?.status === 'deleted' ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => {
+                                    e?.stopPropagation();
+                                    onRestore?.(employee);
+                                  }}
+                                  iconName="RotateCcw"
+                                  iconSize={16}
+                                  className="h-8 w-8 hover:bg-green-100 hover:text-green-600"
+                                  title="Restaurar empleado"
+                                />
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => {
+                                    e?.stopPropagation();
+                                    onDelete?.(employee);
+                                  }}
+                                  iconName="Trash2"
+                                  iconSize={16}
+                                  className="h-8 w-8 hover:bg-red-100 hover:text-red-600"
+                                  title="Eliminar empleado"
+                                />
+                              )}
+                            </>
+                          )}
+
+                          {/* More */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e?.stopPropagation();
+                              // abrir menú "más opciones"
+                            }}
+                            iconName="MoreHorizontal"
+                            iconSize={16}
+                            className="h-8 w-8 hover:bg-gray-100 hover:text-gray-600"
+                            title="Más opciones"
+                          />
+                        </>
                       )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {employee?.full_name || employee?.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {employee?.user_profiles?.email || employee?.email || 'Sin email'}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-                
-                <td className="p-4">
-                  <div className="flex items-center space-x-2">
-                    <Icon name="MapPin" size={14} className="text-muted-foreground" />
-                    <span className="text-sm text-foreground">
-                      {employee?.construction_sites?.name || employee?.site || 'Sin asignar'}
-                    </span>
-                  </div>
-                </td>
-                
-                <td className="p-4">
-                  <span className="text-sm text-foreground">
-                    {employee?.supervisor?.full_name || employee?.supervisor || 'Sin supervisor'}
-                  </span>
-                </td>
-                
-                <td className="p-4">
-                  <span className="text-sm text-muted-foreground">
-                    {formatDate(employee?.hire_date || employee?.hireDate)}
-                  </span>
-                </td>
-                
-                <td className="p-4">
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(employee?.status)}`}>
-                    {getStatusLabel(employee?.status)}
-                  </span>
-                </td>
-                
-                <td className="p-4">
-                  <span className="text-sm text-muted-foreground">
-                    {formatLastAttendance(employee?.last_attendance_date || employee?.lastAttendance)}
-                  </span>
-                </td>
-                
-                <td className="p-4" onClick={(e) => e?.stopPropagation()}>
-                  <div className="flex items-center justify-center space-x-1 action-button">
-                    {/* View Button */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onEmployeeClick?.(employee)}
-                      iconName="Eye"
-                      iconSize={16}
-                      className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
-                      title="Ver detalles"
-                    />
-                    
-                    {hoveredRow === employee?.id && (
-                      <>
-                        {/* Edit Button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e?.stopPropagation();
-                            onEmployeeClick?.(employee);
-                          }}
-                          iconName="Edit"
-                          iconSize={16}
-                          className="h-8 w-8 hover:bg-blue-100 hover:text-blue-600"
-                          title="Editar empleado"
-                        />
-                        
-                        {/* Delete/Restore Buttons */}
-                        {showDeleteActions && (
-                          <>
-                            {employee?.status === 'deleted' ? (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={(e) => {
-                                  e?.stopPropagation();
-                                  onRestore?.(employee);
-                                }}
-                                iconName="RotateCcw"
-                                iconSize={16}
-                                className="h-8 w-8 hover:bg-green-100 hover:text-green-600"
-                                title="Restaurar empleado"
-                              />
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={(e) => {
-                                  e?.stopPropagation();
-                                  onDelete?.(employee);
-                                }}
-                                iconName="Trash2"
-                                iconSize={16}
-                                className="h-8 w-8 hover:bg-red-100 hover:text-red-600"
-                                title="Eliminar empleado"
-                              />
-                            )}
-                          </>
-                        )}
-                        
-                        {/* More Options Button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e?.stopPropagation();
-                            // Handle more actions menu
-                          }}
-                          iconName="MoreHorizontal"
-                          iconSize={16}
-                          className="h-8 w-8 hover:bg-gray-100 hover:text-gray-600"
-                          title="Más opciones"
-                        />
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      
+
       {/* Empty State */}
       {!loading && employees?.length === 0 && (
         <div className="p-12 text-center">
           <Icon name="Users" size={48} className="mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">No se encontraron empleados</h3>
-          <p className="text-muted-foreground">
-            Ajusta los filtros o agrega nuevos empleados al sistema.
-          </p>
+          <p className="text-muted-foreground">Ajusta los filtros o agrega nuevos empleados al sistema.</p>
         </div>
       )}
     </div>

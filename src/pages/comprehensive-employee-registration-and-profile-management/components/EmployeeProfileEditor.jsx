@@ -1,16 +1,17 @@
+// comprehensive-employee-registration-and-profile-management/components/EmployeeProfileEditor.jsx
 import React, { useState, useEffect } from 'react';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Select from '../../../components/ui/Select';
 import { X, User, Save } from 'lucide-react';
 
-export function EmployeeProfileEditor({ 
-  employee, 
-  constructionSites = [], 
-  supervisors = [], 
-  onSubmit, 
-  onClose, 
-  branding 
+export function EmployeeProfileEditor({
+  employee,
+  constructionSites = [],
+  supervisors = [],
+  onSubmit,
+  onClose,
+  branding,
 }) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -29,7 +30,7 @@ export function EmployeeProfileEditor({
     supervisorId: '',
     emergencyContact: '',
     idNumber: '',
-    profilePicture: null
+    profilePicture: null,
   });
 
   useEffect(() => {
@@ -41,29 +42,34 @@ export function EmployeeProfileEditor({
         birthDate: employee?.birth_date || '',
         position: employee?.position || 'albañil',
         salaryType: employee?.salary_type || 'daily',
-        hourlyRate: employee?.hourly_rate?.toString() || '',
-        dailySalary: employee?.daily_salary?.toString() || '',
+        hourlyRate:
+          typeof employee?.hourly_rate === 'number'
+            ? String(employee?.hourly_rate)
+            : employee?.hourly_rate?.toString?.() || '',
+        dailySalary:
+          typeof employee?.daily_salary === 'number'
+            ? String(employee?.daily_salary)
+            : employee?.daily_salary?.toString?.() || '',
         siteId: employee?.site_id || '',
         supervisorId: employee?.supervisor_id || '',
         emergencyContact: employee?.emergency_contact || '',
         idNumber: employee?.id_number || '',
-        profilePicture: employee?.profile_picture_url || null
+        profilePicture: employee?.profile_picture_url || null,
       });
     }
   }, [employee]);
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
     setHasChanges(true);
-    
-    // Clear errors for this field
+
     if (errors?.[field]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [field]: null
+        [field]: null,
       }));
     }
   };
@@ -79,34 +85,53 @@ export function EmployeeProfileEditor({
       newErrors.position = 'El puesto es requerido';
     }
 
-    if (formData?.salaryType === 'hourly' && (!formData?.hourlyRate || parseFloat(formData?.hourlyRate) <= 0)) {
-      newErrors.hourlyRate = 'El salario por hora debe ser mayor a 0';
+    if (formData?.salaryType === 'hourly') {
+      const v = parseFloat(formData?.hourlyRate);
+      if (!v || v <= 0) newErrors.hourlyRate = 'El salario por hora debe ser mayor a 0';
     }
 
-    if (formData?.salaryType === 'daily' && (!formData?.dailySalary || parseFloat(formData?.dailySalary) <= 0)) {
-      newErrors.dailySalary = 'El salario diario debe ser mayor a 0';
+    if (formData?.salaryType === 'daily') {
+      const v = parseFloat(formData?.dailySalary);
+      if (!v || v <= 0) newErrors.dailySalary = 'El salario diario debe ser mayor a 0';
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors)?.length === 0;
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
-    
+
     if (!validateForm()) return;
     if (!hasChanges) {
-      onClose();
+      onClose?.();
       return;
     }
 
     try {
       setLoading(true);
-      const result = await onSubmit(formData);
-      if (result?.success) {
-        onClose();
-      }
+      const payload = {
+        full_name: formData.fullName?.trim(),
+        phone: formData.phone?.trim() || null,
+        address: formData.address?.trim() || null,
+        birth_date: formData.birthDate || null,
+        position: formData.position,
+        salary_type: formData.salaryType,
+        hourly_rate:
+          formData.salaryType === 'hourly' ? Number(parseFloat(formData.hourlyRate).toFixed(2)) : 0,
+        daily_salary:
+        formData.salaryType === 'daily' ? Number(parseFloat(formData.dailySalary).toFixed(2)) : 0,
+        site_id: formData.siteId || null,
+        supervisor_id: formData.supervisorId || null,
+        emergency_contact: formData.emergencyContact?.trim() || null,
+        id_number: formData.idNumber?.trim() || null,
+        profile_picture_url: formData.profilePicture || null,
+      };
+
+      const result = await onSubmit?.(payload);
+      if (result?.success) onClose?.();
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Error updating employee:', error);
     } finally {
       setLoading(false);
@@ -116,14 +141,27 @@ export function EmployeeProfileEditor({
   const handleCancel = () => {
     if (hasChanges) {
       if (window.confirm('¿Estás seguro de que quieres cancelar? Se perderán los cambios no guardados.')) {
-        onClose();
+        onClose?.();
       }
     } else {
-      onClose();
+      onClose?.();
+    }
+  };
+
+  const safeDate = (d) => {
+    if (!d) return '—';
+    try {
+      const dt = d instanceof Date ? d : new Date(d);
+      if (isNaN(dt.getTime())) return '—';
+      return dt.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return '—';
     }
   };
 
   if (!employee) return null;
+
+  const currency = branding?.simbolo_moneda || '$';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -136,7 +174,7 @@ export function EmployeeProfileEditor({
               Editar Perfil de Empleado
             </h2>
             <p className="text-gray-600 mt-1">
-              ID: {employee?.employee_id} | {employee?.user_profiles?.email || 'Sin email'}
+              ID: {employee?.employee_id || 'N/A'} | {employee?.user_profiles?.email || employee?.email || 'Sin email'}
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={handleCancel}>
@@ -145,14 +183,12 @@ export function EmployeeProfileEditor({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
-          {/* Personal Information Section */}
+          {/* Información Personal */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Información Personal</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nombre Completo *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre Completo *</label>
                 <Input
                   type="text"
                   value={formData?.fullName}
@@ -164,9 +200,7 @@ export function EmployeeProfileEditor({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Teléfono
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
                 <Input
                   type="tel"
                   value={formData?.phone}
@@ -176,20 +210,16 @@ export function EmployeeProfileEditor({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha de Nacimiento
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Nacimiento</label>
                 <Input
                   type="date"
-                  value={formData?.birthDate}
+                  value={formData?.birthDate || ''}
                   onChange={(e) => handleInputChange('birthDate', e?.target?.value)}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Número de Identificación
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Número de Identificación</label>
                 <Input
                   type="text"
                   value={formData?.idNumber}
@@ -199,9 +229,7 @@ export function EmployeeProfileEditor({
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Dirección
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Dirección</label>
                 <textarea
                   value={formData?.address}
                   onChange={(e) => handleInputChange('address', e?.target?.value)}
@@ -212,9 +240,7 @@ export function EmployeeProfileEditor({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Contacto de Emergencia
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Contacto de Emergencia</label>
                 <Input
                   type="text"
                   value={formData?.emergencyContact}
@@ -225,17 +251,15 @@ export function EmployeeProfileEditor({
             </div>
           </div>
 
-          {/* Employment Details Section */}
+          {/* Detalles de Empleo */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Detalles de Empleo</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Puesto *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Puesto *</label>
                 <Select
                   value={formData?.position}
-                  onChange={(e) => handleInputChange('position', e?.target?.value)}
+                  onChange={(value) => handleInputChange('position', value)}
                   options={[
                     { value: 'albañil', label: 'Albañil' },
                     { value: 'ayudante', label: 'Ayudante' },
@@ -246,7 +270,7 @@ export function EmployeeProfileEditor({
                     { value: 'pintor', label: 'Pintor' },
                     { value: 'carpintero', label: 'Carpintero' },
                     { value: 'soldador', label: 'Soldador' },
-                    { value: 'operador_maquinaria', label: 'Operador de Maquinaria' }
+                    { value: 'operador_maquinaria', label: 'Operador de Maquinaria' },
                   ]}
                   error={errors?.position}
                 />
@@ -254,34 +278,35 @@ export function EmployeeProfileEditor({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Estado del Empleado
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Estado del Empleado</label>
                 <div className="flex items-center space-x-4">
-                  <span className={`px-3 py-1 text-sm rounded-full ${
-                    employee?.status === 'active' ?'bg-green-100 text-green-800' 
-                      : employee?.status === 'suspended' ?'bg-yellow-100 text-yellow-800' :'bg-red-100 text-red-800'
-                  }`}>
+                  <span
+                    className={`px-3 py-1 text-sm rounded-full ${
+                      employee?.status === 'active'
+                        ? 'bg-green-100 text-green-800'
+                        : employee?.status === 'suspended'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
                     {employee?.status === 'active' && 'Activo'}
                     {employee?.status === 'suspended' && 'Suspendido'}
                     {employee?.status === 'inactive' && 'Inactivo'}
                   </span>
                   <span className="text-sm text-gray-600">
-                    Empleado desde: {new Date(employee?.hire_date)?.toLocaleDateString()}
+                    Empleado desde: {safeDate(employee?.hire_date)}
                   </span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Salary Section */}
+          {/* Información Salarial */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Información Salarial</h3>
-            
+
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tipo de Salario
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Salario</label>
               <div className="flex gap-4">
                 <label className="flex items-center">
                   <input
@@ -312,7 +337,7 @@ export function EmployeeProfileEditor({
               {formData?.salaryType === 'daily' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Salario Diario * ({branding?.simbolo_moneda})
+                    Salario Diario * ({currency})
                   </label>
                   <Input
                     type="number"
@@ -330,7 +355,7 @@ export function EmployeeProfileEditor({
               {formData?.salaryType === 'hourly' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Salario por Hora * ({branding?.simbolo_moneda})
+                    Salario por Hora * ({currency})
                   </label>
                   <Input
                     type="number"
@@ -350,62 +375,62 @@ export function EmployeeProfileEditor({
                   <strong>Equivalencias:</strong>
                 </p>
                 {formData?.salaryType === 'daily' && formData?.dailySalary && (
-                  <p className="text-sm">Por hora: {branding?.simbolo_moneda}{(parseFloat(formData?.dailySalary) / 8)?.toFixed(2)}</p>
+                  <p className="text-sm">
+                    Por hora: {currency}
+                    {(parseFloat(formData?.dailySalary) / 8)?.toFixed(2)}
+                  </p>
                 )}
                 {formData?.salaryType === 'hourly' && formData?.hourlyRate && (
-                  <p className="text-sm">Por día: {branding?.simbolo_moneda}{(parseFloat(formData?.hourlyRate) * 8)?.toFixed(2)}</p>
+                  <p className="text-sm">
+                    Por día: {currency}
+                    {(parseFloat(formData?.hourlyRate) * 8)?.toFixed(2)}
+                  </p>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Assignment Section */}
+          {/* Asignación */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Asignación</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Sitio de Construcción
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sitio de Construcción</label>
                 <Select
                   value={formData?.siteId}
-                  onChange={(e) => handleInputChange('siteId', e?.target?.value)}
+                  onChange={(value) => handleInputChange('siteId', value)}
                   options={[
                     { value: '', label: 'Sin asignar' },
-                    ...constructionSites?.map(site => ({
+                    ...constructionSites.map((site) => ({
                       value: site?.id,
-                      label: `${site?.name} - ${site?.location || 'Ubicación no especificada'}`
-                    }))
+                      label: `${site?.name || site?.nombre || 'Sitio'} - ${
+                        site?.location || site?.direccion || 'Ubicación no especificada'
+                      }`,
+                    })),
                   ]}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Supervisor
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Supervisor</label>
                 <Select
                   value={formData?.supervisorId}
-                  onChange={(e) => handleInputChange('supervisorId', e?.target?.value)}
+                  onChange={(value) => handleInputChange('supervisorId', value)}
                   options={[
                     { value: '', label: 'Sin supervisor asignado' },
-                    ...supervisors?.map(supervisor => ({
-                      value: supervisor?.id,
-                      label: `${supervisor?.full_name} (${supervisor?.email})`
-                    }))
+                    ...supervisors.map((s) => ({
+                      value: s?.id,
+                      label: `${s?.full_name || s?.nombre || 'Supervisor'} (${s?.email || s?.correo || 'sin email'})`,
+                    })),
                   ]}
                 />
               </div>
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Botones */}
           <div className="flex justify-end space-x-3 pt-6 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCancel}
-            >
+            <Button type="button" variant="outline" onClick={handleCancel}>
               Cancelar
             </Button>
             <Button
@@ -424,3 +449,5 @@ export function EmployeeProfileEditor({
     </div>
   );
 }
+
+export default EmployeeProfileEditor;

@@ -10,9 +10,9 @@ export function useBranding(applyTheme = true) {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     const res = await getBranding();
-    if (!res.ok) { setError(res.error); setLoading(false); return; }
-    setBranding(res.data);
-    if (applyTheme) applyBrandingTheme(res.data);
+    if (!res?.ok) { setError(res?.error); setLoading(false); return; }
+    setBranding(res?.data);
+    if (applyTheme) applyBrandingTheme(res?.data);
     setLoading(false);
   }, [applyTheme]);
 

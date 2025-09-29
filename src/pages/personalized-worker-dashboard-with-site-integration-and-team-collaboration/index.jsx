@@ -12,18 +12,7 @@ import RecentIncidents from './components/RecentIncidents';
 import PayrollSummaryCard from './components/PayrollSummaryCard';
 
 import { useQuery } from '@/hooks/useQuery';
-import {
-  getWorkerProfile,
-  getSiteCoworkers,
-  getTodayAttendanceStatus,
-  getWeeklyTimecard,
-  getWorkerIncidents,
-  getRecentPayrollEstimation,
-  clockIn,
-  clockOut,
-  startLunchBreak,
-  endLunchBreak,
-} from '@/services/enhancedAttendanceService';
+import { getWorkerProfile, getSiteCoworkers, getWeeklyTimecard, getWorkerIncidents, clockIn, clockOut, startLunchBreak, endLunchBreak, getTodayAttendanceStatus, getRecentPayrollEstimation } from '@/services/enhancedAttendanceService';
 
 export default function PersonalizedWorkerDashboard() {
   const { user, userProfile, loading: authLoading } = useAuth();
@@ -51,9 +40,9 @@ export default function PersonalizedWorkerDashboard() {
     error: errorCoworkers,
     refetch: refetchCoworkers,
   } = useQuery(getSiteCoworkers, {
-    params: [siteId, userId], // nuestra función acepta (siteId, excludeUserId)
+    params: [siteId, userId], // (siteId, excludeUserId)
     enabled: !!employeeId && !!siteId,
-    select: (d) => Array.isArray(d) ? d : [],
+    select: (d) => (Array.isArray(d) ? d : []),
   });
 
   // 3) Asistencia de hoy
@@ -85,9 +74,9 @@ export default function PersonalizedWorkerDashboard() {
     error: errorIncidents,
     refetch: refetchIncidents,
   } = useQuery(getWorkerIncidents, {
-    params: [employeeId, 5],
+    params: [employeeId, 5], // (employeeId, limit)
     enabled: !!employeeId,
-    select: (d) => Array.isArray(d) ? d : [],
+    select: (d) => (Array.isArray(d) ? d : []),
   });
 
   // 6) Estimación de nómina reciente
@@ -106,15 +95,15 @@ export default function PersonalizedWorkerDashboard() {
     if (!employeeId) return;
     try {
       let res;
-      if (action === 'clock_in')      res = await clockIn(employeeId, { location, notes });
-      else if (action === 'clock_out')res = await clockOut(employeeId, { location, notes });
+      if (action === 'clock_in')       res = await clockIn(employeeId, { location, notes });
+      else if (action === 'clock_out') res = await clockOut(employeeId, { location, notes });
       else if (action === 'lunch_start') res = await startLunchBreak(employeeId);
       else if (action === 'lunch_end')   res = await endLunchBreak(employeeId);
 
       if (!res?.ok) throw new Error(res?.error || 'Acción inválida');
       await Promise.all([refetchToday(), refetchWeekly()]);
     } catch (e) {
-      alert(e.message || 'Error en la acción de asistencia');
+      alert(e?.message || 'Error en la acción de asistencia');
     }
   };
 
@@ -157,7 +146,7 @@ export default function PersonalizedWorkerDashboard() {
           <div className="text-center">
             <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-gray-900 mb-2">No se pudo cargar el perfil</h2>
-            <p className="text-gray-600 mb-4">{errorProfile.message}</p>
+            <p className="text-gray-600 mb-4">{errorProfile?.message}</p>
             <button
               onClick={() => refetchProfile()}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"

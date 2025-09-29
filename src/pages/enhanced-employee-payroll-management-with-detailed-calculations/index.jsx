@@ -1,440 +1,333 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/enhanced-employee-payroll-management-with-detailed-calculations/index.jsx
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
-import NavigationHeader from '../../components/ui/NavigationHeader';
-import UserContextHeader from '../../components/ui/UserContextHeader';
-import NotificationCenter from '../../components/ui/NotificationCenter';
 
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
+import { useAuth } from '@/contexts/AuthContext';
+import RoleBasedSidebar from '@/components/ui/RoleBasedSidebar';
+import NavigationHeader from '@/components/ui/NavigationHeader';
+import UserContextHeader from '@/components/ui/UserContextHeader';
+import NotificationCenter from '@/components/ui/NotificationCenter';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Icon from '@/components/AppIcon';
+import { useQuery } from '@/hooks/useQuery';
+import { showToast } from '@/components/ui/ToastHub';
 
-import Icon from '../../components/AppIcon';
-import { supabase } from '../../lib/supabase';
+import enhancedEmployeeService from '@/services/enhancedEmployeeService';
+import { payrollService } from '@/services/payrollService';
 
-// Import components
+// Components
 import EmployeeSelectionGrid from './components/EmployeeSelectionGrid';
 import PayrollCalculationView from './components/PayrollCalculationView';
 import PayrollSummaryCards from './components/PayrollSummaryCards';
 import AuditTrailPanel from './components/AuditTrailPanel';
 
+// ---------- Helpers de fechas ----------
+const toISODate = (d) => (d instanceof Date ? d : new Date(d)).toISOString().split('T')[0];
+function getCurrentWeekStart() {
+  const t = new Date();
+  const day = t.getDay(); // 0..6 (0=Dom)
+  const monday = new Date(t);
+  monday.setDate(t.getDate() - ((day + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  return toISODate(monday);
+}
+function getCurrentWeekEnd() {
+  const start = new Date(getCurrentWeekStart());
+  const sunday = new Date(start);
+  sunday.setDate(start.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return toISODate(sunday);
+}
+
 const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, userProfile, isAdmin, hasRole } = useAuth();
-  
+  const { user, userProfile, hasRole } = useAuth();
+
+  // UI state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [employees, setEmployees] = useState([]);
-  const [payrollData, setPayrollData] = useState({});
-  const [weekRange, setWeekRange] = useState({
-    start: getCurrentWeekStart(),
-    end: getCurrentWeekEnd()
-  });
-  const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [calculations, setCalculations] = useState(null);
   const [adjustments, setAdjustments] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
 
-  // Filter states
-  const [filters, setFilters] = useState({
-    search: '',
-    obra: 'all',
-    status: 'all'
+  // Filtros
+  const [filters, setFilters] = useState({ search: '', obra: 'all', status: 'all' });
+
+  // Rango semanal
+  const [weekRange, setWeekRange] = useState({
+    start: getCurrentWeekStart(),
+    end: getCurrentWeekEnd(),
   });
 
-  const [obras, setObras] = useState([]);
-  const [currencyConfig, setCurrencyConfig] = useState({
-    symbol: '$',
-    currency: 'MXN'
-  });
+  // Config de moneda (si tienes BrandingProvider, podrías leer de ahí)
+  const [currencyConfig] = useState({ symbol: '$', currency: 'MXN' });
 
-  // Get current week start (Monday)
-  function getCurrentWeekStart() {
-    const today = new Date();
-    const currentDay = today?.getDay();
-    const monday = new Date(today);
-    monday?.setDate(today?.getDate() - currentDay + (currentDay === 0 ? -6 : 1));
-    return monday?.toISOString()?.split('T')?.[0];
-  }
-
-  // Get current week end (Sunday)
-  function getCurrentWeekEnd() {
-    const today = new Date();
-    const currentDay = today?.getDay();
-    const sunday = new Date(today);
-    sunday?.setDate(today?.getDate() - currentDay + 7);
-    return sunday?.toISOString()?.split('T')?.[0];
-  }
-
+  // --------- Guards de acceso ----------
   useEffect(() => {
     if (!user || !userProfile) {
-      navigate('/login');
+      navigate('/employee-login-portal', { replace: true });
       return;
     }
-
     if (!hasRole?.('admin')) {
-      navigate('/dashboard');
-      return;
+      navigate('/dashboard', { replace: true });
     }
+  }, [user, userProfile, hasRole, navigate]);
 
-    initializeData();
-  }, [user, userProfile, weekRange]);
+  // --------- Empleados (service) ----------
+  const employeeParams = useMemo(
+    () => ({
+      search: filters.search || '',
+      site: 'all',
+      supervisor: 'all',
+      status: filters.status === 'all' ? [] : [filters.status],
+      position: 'all',
+      hireDateFrom: '',
+      hireDateTo: '',
+      limit: 1000,
+    }),
+    [filters.search, filters.status]
+  );
 
-  // Handle URL employee parameter
-  useEffect(() => {
-    const employeeId = location?.state?.employeeId;
-    if (employeeId && employees?.length > 0) {
-      const employee = employees?.find(emp => emp?.id === employeeId);
-      if (employee) {
-        setSelectedEmployee(employee);
-      }
-    }
-  }, [location?.state?.employeeId, employees]);
+  const {
+    data: employeesRaw = [],
+    isLoading: loadingEmployees,
+    error: employeesError,
+    refetch: refetchEmployees,
+  } = useQuery(enhancedEmployeeService.getEmployees.bind(enhancedEmployeeService), employeeParams, {
+    deps: [JSON.stringify(employeeParams)],
+    keepPreviousData: true,
+    retry: 1,
+    onError: (e) => showToast({ title: 'Error al cargar empleados', message: e.message, type: 'error' }),
+  });
 
-  const initializeData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-
-      await Promise.all([
-        loadEmployees(),
-        loadObras(),
-        loadCurrencyConfig(),
-        loadAuditLogs()
-      ]);
-
-    } catch (error) {
-      console.error('Error initializing data:', error);
-      setError('Error al cargar los datos del sistema');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadEmployees = async () => {
-    try {
-      const { data: empleadosData, error: empleadosError } = await supabase
-        ?.from('empleados')
-        ?.select(`
-          id,
-          codigo_empleado,
-          salario_diario,
-          status,
-          user_profiles:user_id (
-            id,
-            full_name,
-            email,
-            phone
-          ),
-          obras:obra_id (
-            id,
-            nombre
-          ),
-          supervisor:supervisor_id (
-            full_name
-          )
-        `)
-        ?.eq('status', 'active')
-        ?.order('user_profiles(full_name)', { ascending: true });
-
-      if (empleadosError) throw empleadosError;
-
-      const employeesWithPayroll = await Promise.all(
-        empleadosData?.map(async (emp) => {
-          const payrollData = await calculateEmployeePayroll(emp?.id);
-          return {
-            id: emp?.id,
-            employeeCode: emp?.codigo_empleado,
-            name: emp?.user_profiles?.full_name || 'Sin nombre',
-            email: emp?.user_profiles?.email,
-            phone: emp?.user_profiles?.phone,
-            dailySalary: emp?.salario_diario || 0,
-            status: emp?.status,
-            site: emp?.obras?.nombre || 'Sin asignar',
-            supervisor: emp?.supervisor?.full_name || 'Sin supervisor',
-            ...payrollData
-          };
-        }) || []
-      );
-
-      setEmployees(employeesWithPayroll);
-    } catch (error) {
-      if (error?.message?.includes('Failed to fetch')) {
-        setError('No se puede conectar a la base de datos. Verifica tu conexión.');
-      } else {
-        setError(`Error al cargar empleados: ${error?.message}`);
-      }
-    }
-  };
-
-  const loadObras = async () => {
-    try {
-      const { data, error } = await supabase
-        ?.from('obras')
-        ?.select('id, nombre')
-        ?.eq('activa', true)
-        ?.order('nombre');
-
-      if (error) throw error;
-
-      setObras(data || []);
-    } catch (error) {
-      console.error('Error loading obras:', error);
-    }
-  };
-
-  const loadCurrencyConfig = async () => {
-    try {
-      const { data, error } = await supabase
-        ?.from('configuracion_aplicacion')
-        ?.select('simbolo_moneda, moneda')
-        ?.single();
-
-      if (error && error?.code !== 'PGRST116') throw error;
-
-      if (data) {
-        setCurrencyConfig({
-          symbol: data?.simbolo_moneda || '$',
-          currency: data?.moneda || 'MXN'
-        });
-      }
-    } catch (error) {
-      console.error('Error loading currency config:', error);
-    }
-  };
-
-  const loadAuditLogs = async () => {
-    try {
-      const { data, error } = await supabase
-        ?.from('logs_actividad')
-        ?.select(`
-          id,
-          accion,
-          descripcion,
-          fecha,
-          user_profiles:usuario_id (full_name)
-        `)
-        ?.eq('modulo', 'Payroll')
-        ?.order('fecha', { ascending: false })
-        ?.limit(50);
-
-      if (error) throw error;
-
-      setAuditLogs(data?.map(log => ({
-        id: log?.id,
-        action: log?.accion,
-        description: log?.descripcion,
-        timestamp: log?.fecha,
-        user: log?.user_profiles?.full_name || 'Usuario desconocido'
-      })) || []);
-    } catch (error) {
-      console.error('Error loading audit logs:', error);
-    }
-  };
-
-  const calculateEmployeePayroll = async (employeeId) => {
-    try {
-      const { data, error } = await supabase
-        ?.rpc('calculate_weekly_payroll', {
-          p_employee_id: employeeId,
-          p_start_date: weekRange?.start,
-          p_end_date: weekRange?.end
-        });
-
-      if (error) {
-        console.error('Error calculating payroll:', error);
-        return {
-          workedDays: 0,
-          regularHours: 0,
-          overtimeHours: 0,
-          basePay: 0,
-          overtimePay: 0,
-          grossPay: 0,
-          bonuses: 0,
-          deductions: 0,
-          netPay: 0
-        };
-      }
-
-      const result = data?.[0] || {};
-      return {
-        workedDays: result?.dias_trabajados || 0,
-        regularHours: parseFloat(result?.horas_regulares || 0),
-        overtimeHours: parseFloat(result?.horas_extra || 0),
-        basePay: parseFloat(result?.salario_base || 0),
-        overtimePay: parseFloat(result?.pago_horas_extra || 0),
-        grossPay: parseFloat(result?.salario_bruto || 0),
-        bonuses: 0,
-        deductions: 0,
-        netPay: parseFloat(result?.salario_bruto || 0)
-      };
-    } catch (error) {
-      console.error('Error in calculateEmployeePayroll:', error);
-      return {
+  // Adaptamos empleados al grid (employeeSelection)
+  const employees = useMemo(
+    () =>
+      (employeesRaw || []).map((emp) => ({
+        id: emp.id,
+        employeeCode: emp.employeeId,
+        name: emp.name || '—',
+        email: emp.email,
+        phone: emp.phone,
+        dailySalary: Number(emp.dailySalary || 0),
+        status: emp.status || 'active',
+        site: emp.site || 'Sin asignar',
+        supervisor: emp.supervisor || '—',
+        // campos que el grid usa para mostrar totales (se llenan luego con cálculo por empleado)
         workedDays: 0,
         regularHours: 0,
         overtimeHours: 0,
         basePay: 0,
         overtimePay: 0,
         grossPay: 0,
-        bonuses: 0,
-        deductions: 0,
-        netPay: 0
-      };
-    }
-  };
+      })),
+    [employeesRaw]
+  );
 
+  // Enlace profundo por employeeId (desde navigate state)
+  useEffect(() => {
+    const deepId = location?.state?.employeeId;
+    if (deepId && employees.length) {
+      const found = employees.find((e) => e.id === deepId);
+      if (found) setSelectedEmployee(found);
+    }
+  }, [location?.state?.employeeId, employees]);
+
+  // --------- Auditoría (service) ----------
+  const {
+    data: auditLogs = [],
+    isLoading: loadingAudit,
+    error: auditError,
+    refetch: refetchAudit,
+  } = useQuery(payrollService.getAuditLogs, {
+    params: { module: 'Payroll', limit: 50 },
+    deps: [weekRange.start, weekRange.end],
+    retry: 1,
+  });
+
+  // --------- Handlers ----------
   const handleEmployeeSelect = async (employee) => {
     setSelectedEmployee(employee);
     setProcessing(true);
     setError('');
-
     try {
-      // Load detailed payroll calculations
-      const detailedCalculations = await calculateEmployeePayroll(employee?.id);
-      setCalculations(detailedCalculations);
+      // Cálculo detallado por empleado y semana
+      const calc = await payrollService.calculateWeeklyPayroll(
+        employee.id,
+        weekRange.start,
+        weekRange.end
+      );
+      const normalized = {
+        workedDays: Number(calc?.workedDays || calc?.diasTrabajados || 0),
+        regularHours: Number(calc?.regularHours || calc?.horasRegulares || 0),
+        overtimeHours: Number(calc?.overtimeHours || calc?.horasExtra || 0),
+        basePay: Number(calc?.basePay || calc?.salarioBase || 0),
+        overtimePay: Number(calc?.overtimePay || calc?.pagoHorasExtra || 0),
+        grossPay: Number(calc?.grossPay || calc?.salarioBruto || 0),
+        bonuses: Number(calc?.bonuses || 0),
+        deductions: Number(calc?.deductions || 0),
+        netPay: Number(calc?.netPay || calc?.salarioNeto || calc?.salarioBruto || 0),
+      };
+      setCalculations(normalized);
 
-      // Load existing adjustments
-      const { data: adjustmentsData, error: adjustmentsError } = await supabase
-        ?.from('ajustes_nomina')
-        ?.select('*')
-        ?.eq('empleado_id', employee?.id)
-        ?.gte('created_at', weekRange?.start)
-        ?.lte('created_at', weekRange?.end + 'T23:59:59');
-
-      if (adjustmentsError) throw adjustmentsError;
-
-      setAdjustments(adjustmentsData?.map(adj => ({
-        id: adj?.id,
-        type: adj?.tipo,
-        category: adj?.categoria,
-        amount: parseFloat(adj?.monto),
-        description: adj?.descripcion,
-        timestamp: adj?.created_at
-      })) || []);
-
-    } catch (error) {
-      setError(`Error al cargar detalles del empleado: ${error?.message}`);
+      // Ajustes existentes
+      const adjs = await payrollService.getAdjustments(employee.id, weekRange.start, weekRange.end);
+      setAdjustments(
+        (adjs || []).map((a) => ({
+          id: a.id,
+          type: a.type,
+          category: a.category,
+          amount: Number(a.amount || 0),
+          description: a.description,
+          timestamp: a.created_at || a.timestamp,
+        }))
+      );
+    } catch (e) {
+      setError(`Error al cargar detalles: ${e?.message || e}`);
     } finally {
       setProcessing(false);
     }
   };
 
   const handleSaveAdjustment = async (adjustment) => {
+    if (!selectedEmployee) return;
     try {
-      const { error } = await supabase
-        ?.from('ajustes_nomina')
-        ?.insert({
-          empleado_id: selectedEmployee?.id,
-          nomina_id: null, // Will be set when payroll is processed
-          tipo: adjustment?.type,
-          categoria: adjustment?.category,
-          monto: adjustment?.amount,
-          descripcion: adjustment?.description,
-          autorizado_por: user?.id
-        });
+      await payrollService.addAdjustment({
+        employeeId: selectedEmployee.id,
+        startDate: weekRange.start,
+        endDate: weekRange.end,
+        type: adjustment?.type,
+        category: adjustment?.category,
+        amount: Number(adjustment?.amount || 0),
+        description: adjustment?.description,
+        authorizedBy: user?.id,
+      });
 
-      if (error) throw error;
-
-      // Reload employee data
+      // Re-cargar datos del empleado seleccionado
       await handleEmployeeSelect(selectedEmployee);
-
-      // Log activity
-      await logActivity('adjustment_added', `Ajuste agregado: ${adjustment?.description}`);
-
-    } catch (error) {
-      setError(`Error al guardar ajuste: ${error?.message}`);
+      await payrollService.logActivity({
+        userId: user?.id,
+        role: userProfile?.role || 'user',
+        action: 'adjustment_added',
+        module: 'Payroll',
+        description: `Ajuste: ${adjustment?.description}`,
+      });
+      showToast({ title: 'Ajuste guardado', type: 'success' });
+    } catch (e) {
+      setError(`Error al guardar ajuste: ${e?.message || e}`);
     }
   };
 
   const handleBulkCalculation = async () => {
+    if (!employees.length) return;
     setProcessing(true);
-    
+    setError('');
     try {
       let processed = 0;
-      for (const employee of employees) {
-        await calculateEmployeePayroll(employee?.id);
+      // (Si tu backend soporta bulk, crea payrollService.calculateWeeklyPayrollBulk)
+      for (const emp of employees) {
+        await payrollService.calculateWeeklyPayroll(emp.id, weekRange.start, weekRange.end);
         processed++;
       }
-
-      await logActivity('bulk_calculation', `Cálculo masivo completado para ${processed} empleados`);
-      await loadEmployees(); // Refresh data
-
-    } catch (error) {
-      setError(`Error en cálculo masivo: ${error?.message}`);
+      await payrollService.logActivity({
+        userId: user?.id,
+        role: userProfile?.role || 'user',
+        action: 'bulk_calculation',
+        module: 'Payroll',
+        description: `Cálculo masivo completado para ${processed} empleados`,
+      });
+      showToast({ title: 'Cálculo masivo completado', type: 'success' });
+      await refetchEmployees();
+      await refetchAudit();
+    } catch (e) {
+      setError(`Error en cálculo masivo: ${e?.message || e}`);
     } finally {
       setProcessing(false);
     }
   };
 
-  const logActivity = async (action, description) => {
+  const handleExport = async (format = 'csv') => {
     try {
-      await supabase?.from('logs_actividad')?.insert({
-        usuario_id: user?.id,
-        rol: userProfile?.role || 'user',
-        accion: action,
-        modulo: 'Payroll',
-        descripcion: description
+      const subset = selectedEmployee ? [selectedEmployee] : employees;
+      if (!subset.length) {
+        showToast({ title: 'Sin datos', message: 'No hay empleados para exportar', type: 'info' });
+        return;
+      }
+      const header = [
+        'Código',
+        'Nombre',
+        'Sitio',
+        'Días Trabajados',
+        'Horas Regulares',
+        'Horas Extra',
+        'Salario Base',
+        'Pago Horas Extra',
+        'Salario Bruto',
+      ].join(',');
+      const lines = subset.map((emp) => {
+        const c = emp.id === selectedEmployee?.id ? calculations : null;
+        const workedDays = c?.workedDays ?? emp?.workedDays ?? 0;
+        const regularHours = c?.regularHours ?? emp?.regularHours ?? 0;
+        const overtimeHours = c?.overtimeHours ?? emp?.overtimeHours ?? 0;
+        const basePay = c?.basePay ?? emp?.basePay ?? 0;
+        const overtimePay = c?.overtimePay ?? emp?.overtimePay ?? 0;
+        const grossPay = c?.grossPay ?? emp?.grossPay ?? 0;
+
+        return [
+          emp.employeeCode || '',
+          `"${(emp.name || '').replace(/"/g, '""')}"`,
+          `"${(emp.site || '').replace(/"/g, '""')}"`,
+          workedDays,
+          regularHours,
+          overtimeHours,
+          basePay,
+          overtimePay,
+          grossPay,
+        ].join(',');
       });
-    } catch (error) {
-      console.error('Failed to log activity:', error);
+      const csv = [header, ...lines].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `nomina_${weekRange.start}_${weekRange.end}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+
+      await payrollService.logActivity({
+        userId: user?.id,
+        role: userProfile?.role || 'user',
+        action: 'export',
+        module: 'Payroll',
+        description: `Datos exportados en formato ${format}`,
+      });
+      showToast({ title: 'Exportación lista', type: 'success' });
+    } catch (e) {
+      setError(`Error al exportar: ${e?.message || e}`);
     }
   };
 
-  const handleExport = async (format = 'excel') => {
-    try {
-      const dataToExport = selectedEmployee ? [selectedEmployee] : employees;
-      
-      // Create CSV content
-      const csvContent = [
-        ['Código', 'Nombre', 'Sitio', 'Días Trabajados', 'Horas Regulares', 'Horas Extra', 'Salario Base', 'Pago Horas Extra', 'Salario Bruto']?.join(','),
-        ...dataToExport?.map(emp => [
-          emp?.employeeCode || '',
-          emp?.name || '',
-          emp?.site || '',
-          emp?.workedDays || 0,
-          emp?.regularHours || 0,
-          emp?.overtimeHours || 0,
-          emp?.basePay || 0,
-          emp?.overtimePay || 0,
-          emp?.grossPay || 0
-        ]?.join(','))
-      ]?.join('\n');
+  // Filtrado cliente adicional (obra/status por etiquetas de texto)
+  const filteredEmployees = useMemo(() => {
+    return (employees || []).filter((employee) => {
+      const matchesSearch =
+        !filters.search ||
+        employee.name?.toLowerCase().includes(filters.search.toLowerCase()) ||
+        employee.employeeCode?.toLowerCase().includes(filters.search.toLowerCase());
+      const matchesObra = filters.obra === 'all' || employee.site === filters.obra;
+      const matchesStatus = filters.status === 'all' || employee.status === filters.status;
+      return matchesSearch && matchesObra && matchesStatus;
+    });
+  }, [employees, filters]);
 
-      // Download CSV
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `nomina_${weekRange?.start}_${weekRange?.end}.csv`;
-      link?.click();
-
-      await logActivity('export', `Datos exportados en formato ${format}`);
-
-    } catch (error) {
-      setError(`Error al exportar: ${error?.message}`);
-    }
-  };
-
-  // Filter employees
-  const filteredEmployees = employees?.filter(employee => {
-    const matchesSearch = !filters?.search || 
-      employee?.name?.toLowerCase()?.includes(filters?.search?.toLowerCase()) ||
-      employee?.employeeCode?.toLowerCase()?.includes(filters?.search?.toLowerCase());
-    
-    const matchesObra = filters?.obra === 'all' || employee?.site === filters?.obra;
-    const matchesStatus = filters?.status === 'all' || employee?.status === filters?.status;
-    
-    return matchesSearch && matchesObra && matchesStatus;
-  });
-
-  if (loading) {
+  // Loading inicial
+  if (loadingEmployees) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           <span className="text-muted-foreground">Cargando sistema de nómina...</span>
         </div>
       </div>
@@ -444,7 +337,7 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar */}
-      <RoleBasedSidebar 
+      <RoleBasedSidebar
         isCollapsed={sidebarCollapsed}
         userRole={userProfile?.role?.toLowerCase()}
       />
@@ -463,7 +356,6 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
                 iconName={sidebarCollapsed ? 'PanelLeftOpen' : 'PanelLeftClose'}
                 iconSize={20}
               />
-              
               <div>
                 <h1 className="text-2xl font-bold text-foreground">Gestión de Nómina Detallada</h1>
                 <p className="text-muted-foreground">Cálculos detallados y gestión integral de nómina</p>
@@ -472,13 +364,13 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
 
             <div className="flex items-center space-x-4">
               <NotificationCenter />
-              <UserContextHeader 
+              <UserContextHeader
                 user={{
                   name: userProfile?.full_name || 'Usuario',
                   role: userProfile?.role || 'user',
-                  site: 'Oficina Central'
+                  site: 'Oficina Central',
                 }}
-                onLogout={() => navigate('/login')}
+                onLogout={() => navigate('/employee-login-portal')}
               />
             </div>
           </div>
@@ -488,7 +380,7 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
         <main className="p-6">
           <NavigationHeader showBackButton={false} />
 
-          {/* Error Display */}
+          {/* Error */}
           {error && (
             <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
               <div className="flex items-center space-x-2">
@@ -498,27 +390,37 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
               <p className="text-destructive mt-1">{error}</p>
             </div>
           )}
+          {employeesError && (
+            <div className="mb-6 p-3 text-sm rounded bg-red-50 border border-red-200 text-red-700">
+              {String(employeesError)}
+            </div>
+          )}
+          {auditError && (
+            <div className="mb-6 p-3 text-sm rounded bg-yellow-50 border border-yellow-200 text-yellow-800">
+              {String(auditError)}
+            </div>
+          )}
 
           {/* Controls Bar */}
           <div className="mb-6 bg-card border border-border rounded-lg p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
               <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
-                {/* Week Range Selector */}
+                {/* Week Range */}
                 <div className="flex items-center space-x-2">
                   <Icon name="Calendar" size={16} className="text-muted-foreground" />
                   <Input
                     type="date"
                     label="Inicio"
-                    value={weekRange?.start}
-                    onChange={(e) => setWeekRange(prev => ({ ...prev, start: e?.target?.value }))}
+                    value={weekRange.start}
+                    onChange={(e) => setWeekRange((p) => ({ ...p, start: e.target.value }))}
                     className="w-auto"
                   />
                   <span className="text-muted-foreground">-</span>
                   <Input
                     type="date"
                     label="Fin"
-                    value={weekRange?.end}
-                    onChange={(e) => setWeekRange(prev => ({ ...prev, end: e?.target?.value }))}
+                    value={weekRange.end}
+                    onChange={(e) => setWeekRange((p) => ({ ...p, end: e.target.value }))}
                     className="w-auto"
                   />
                 </div>
@@ -527,27 +429,17 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
                 <Input
                   type="search"
                   placeholder="Buscar empleado..."
-                  value={filters?.search}
-                  onChange={(e) => setFilters(prev => ({ ...prev, search: e?.target?.value }))}
+                  value={filters.search}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
                   className="w-64"
                 />
               </div>
 
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  iconName="Download"
-                  onClick={() => handleExport('excel')}
-                >
+                <Button variant="outline" iconName="Download" onClick={() => handleExport('csv')}>
                   Exportar
                 </Button>
-                
-                <Button
-                  variant="default"
-                  iconName="Calculator"
-                  onClick={handleBulkCalculation}
-                  disabled={processing}
-                >
+                <Button variant="default" iconName="Calculator" onClick={handleBulkCalculation} disabled={processing}>
                   {processing ? 'Procesando...' : 'Calcular Todo'}
                 </Button>
               </div>
@@ -555,15 +447,11 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
           </div>
 
           {/* Summary Cards */}
-          <PayrollSummaryCards 
-            employees={filteredEmployees}
-            currencyConfig={currencyConfig}
-            weekRange={weekRange}
-          />
+          <PayrollSummaryCards employees={filteredEmployees} currencyConfig={currencyConfig} weekRange={weekRange} />
 
-          {/* Main Layout */}
+          {/* Main */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
-            {/* Employee Selection Grid (40%) */}
+            {/* Employee Selection */}
             <div className="lg:col-span-2">
               <EmployeeSelectionGrid
                 employees={filteredEmployees}
@@ -574,7 +462,7 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
               />
             </div>
 
-            {/* Payroll Calculation View (60%) */}
+            {/* Calculation View */}
             <div className="lg:col-span-3">
               {selectedEmployee ? (
                 <PayrollCalculationView
@@ -589,12 +477,8 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
               ) : (
                 <div className="bg-card border border-border rounded-lg p-8 text-center">
                   <Icon name="Calculator" size={48} className="mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">
-                    Selecciona un Empleado
-                  </h3>
-                  <p className="text-muted-foreground">
-                    Elige un empleado de la lista para ver los cálculos detallados de nómina
-                  </p>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">Selecciona un Empleado</h3>
+                  <p className="text-muted-foreground">Elige un empleado de la lista para ver los cálculos detallados de nómina</p>
                 </div>
               )}
             </div>
@@ -603,10 +487,7 @@ const EnhancedEmployeePayrollManagementWithDetailedCalculations = () => {
           {/* Audit Trail */}
           {selectedEmployee && (
             <div className="mt-6">
-              <AuditTrailPanel
-                logs={auditLogs}
-                employeeId={selectedEmployee?.id}
-              />
+              <AuditTrailPanel logs={auditLogs} employeeId={selectedEmployee?.id} isLoading={loadingAudit} />
             </div>
           )}
         </main>

@@ -1,18 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Code, FileText, CheckCircle, AlertTriangle, XCircle, RefreshCw, Download, Smartphone, Monitor, Palette, Layers, Package, TestTube, Shield, Activity } from 'lucide-react';
+import {
+  Code, FileText, CheckCircle, AlertTriangle, XCircle, RefreshCw, Download,
+  Smartphone, Monitor, Palette, Layers, Package, TestTube, Shield, Activity
+} from 'lucide-react';
+import { qualityService } from '../../services/qualityService'
+; // ✅ Asegúrate de tener este servicio creado
 
 export default function FrontendArchitectureAndCodeQualityDashboard() {
   const { userProfile, hasRole } = useAuth();
+
   const [loading, setLoading] = useState(true);
   const [activePanel, setActivePanel] = useState('architecture');
+  const [error, setError] = useState('');
+
+  // Estado inicial (simulado) como fallback
   const [codeMetrics, setCodeMetrics] = useState({
     typescript: { coverage: 100, errors: 0, warnings: 0 },
     tailwind: { utilization: 85, customComponents: 24, bundleSize: '245kb' },
     eslint: { violations: 0, warnings: 2, fixed: 45 },
     prettier: { compliance: 100, formatted: 156 },
-    performance: { buildTime: '12.3s', bundleSize: '1.2MB', loadTime: '0.8s' }
+    performance: { buildTime: '12.3s', bundleSize: '1.2MB', loadTime: '0.8s' },
+    analysis: []
   });
+
   const [componentArchitecture, setComponentArchitecture] = useState({
     pages: 28,
     components: 156,
@@ -20,6 +31,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
     hooks: 8,
     contexts: 3
   });
+
   const [qualityChecks, setQualityChecks] = useState([
     { name: 'TypeScript Configuration', status: 'passed', score: 100 },
     { name: 'ESLint Rules Compliance', status: 'passed', score: 98 },
@@ -30,12 +42,14 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
     { name: 'Bundle Optimization', status: 'passed', score: 88 },
     { name: 'Testing Coverage', status: 'warning', score: 78 }
   ]);
+
   const [responsiveBreakpoints, setResponsiveBreakpoints] = useState([
     { device: 'Mobile', width: '375px', status: 'passed', components: 156 },
     { device: 'Tablet', width: '768px', status: 'passed', components: 156 },
     { device: 'Desktop', width: '1024px', status: 'passed', components: 156 },
     { device: 'Wide Desktop', width: '1440px', status: 'passed', components: 156 }
   ]);
+
   const [buildMetrics, setBuildMetrics] = useState({
     lastBuild: '2025-01-19T14:30:00Z',
     buildTime: '12.3s',
@@ -44,32 +58,10 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
     chunks: 8
   });
 
-  useEffect(() => {
-    if (hasRole('admin')) {
-      loadArchitectureData();
-    }
-  }, [hasRole]);
-
-  const loadArchitectureData = async () => {
-    setLoading(true);
-    
-    // Simulate loading architecture and quality data
-    setTimeout(() => {
-      // Simulate component analysis
-      analyzeComponentStructure();
-      
-      // Simulate build analysis
-      analyzeBuildPerformance();
-      
-      // Simulate quality checks
-      runQualityChecks();
-      
-      setLoading(false);
-    }, 1500);
-  };
-
+  // ---------------------------------------------------------
+  // Helpers de “simulado” (fallback si no hay snapshot en BD)
+  // ---------------------------------------------------------
   const analyzeComponentStructure = () => {
-    // Analyze actual project structure based on existing files
     const projectStructure = {
       pages: {
         count: 28,
@@ -101,12 +93,10 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
         }
       }
     };
-
     setComponentArchitecture(projectStructure);
   };
 
   const analyzeBuildPerformance = () => {
-    // Simulate Vite build analysis
     const buildAnalysis = {
       viteConfig: 'optimized',
       typeScript: 'strict mode enabled',
@@ -119,15 +109,10 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
         assets: '124kb'
       }
     };
-
-    setBuildMetrics(prev => ({
-      ...prev,
-      ...buildAnalysis
-    }));
+    setBuildMetrics(prev => ({ ...prev, ...buildAnalysis }));
   };
 
   const runQualityChecks = () => {
-    // Simulate comprehensive quality analysis
     const qualityResults = [
       {
         category: 'TypeScript',
@@ -154,21 +139,99 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
         ]
       }
     ];
-
-    // Update quality metrics based on analysis
-    setCodeMetrics(prev => ({
-      ...prev,
-      analysis: qualityResults
-    }));
+    setCodeMetrics(prev => ({ ...prev, analysis: qualityResults }));
   };
 
+  // ---------------------------------------------------------
+  // 🔌 Aquí va la conexión real: loadArchitectureData
+  //    - Lee el último snapshot con qualityService
+  //    - Si no hay, cae a los simulados actuales
+  // ---------------------------------------------------------
+  const loadArchitectureData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await qualityService.getLatestReport();
+
+      if (res.ok && res.data) {
+        const { eslint_json, jest_coverage_json, bundle_json, meta, created_at } = res.data;
+
+        // ESLint
+        const eslintStats = Array.isArray(eslint_json) && eslint_json.length > 0 ? eslint_json[0] : null;
+        const eslintMapped = {
+          violations: Number(eslintStats?.errorCount ?? 0),
+          warnings: Number(eslintStats?.warningCount ?? 0),
+          fixed: Number(eslintStats?.fixableErrorCount ?? 0) + Number(eslintStats?.fixableWarningCount ?? 0)
+        };
+
+        // Coverage (Jest)
+        const cov = jest_coverage_json?.total ?? {};
+        const coveragePct = Number(cov?.statements?.pct ?? cov?.lines?.pct ?? 0);
+
+        // Bundle / build
+        const bundleSummary = bundle_json?.summary ?? {};
+        const totalBytesHuman = bundleSummary?.totalBytesHuman ?? buildMetrics.bundleSize;
+
+        setCodeMetrics(prev => ({
+          ...prev,
+          eslint: { ...eslintMapped },
+          typescript: { ...prev.typescript, coverage: Math.round(coveragePct * 100) / 100, errors: 0, warnings: 0 },
+          performance: {
+            ...prev.performance,
+            buildTime: meta?.buildTime ?? prev.performance.buildTime,
+            bundleSize: totalBytesHuman ?? prev.performance.bundleSize,
+            loadTime: prev.performance.loadTime
+          }
+        }));
+
+        setBuildMetrics(prev => ({
+          ...prev,
+          lastBuild: created_at ?? new Date().toISOString(),
+          buildTime: meta?.buildTime ?? prev.buildTime,
+          bundleSize: totalBytesHuman ?? prev.bundleSize,
+          assets: bundleSummary?.assets ?? prev.assets,
+          chunks: bundleSummary?.chunks ?? prev.chunks
+        }));
+
+        // Si quieres, aquí puedes derivar arquitectura desde el bundle (por ahora mantenemos simulada)
+        analyzeComponentStructure();
+        runQualityChecks();
+      } else {
+        // Fallback a simulados si no hay snapshot
+        analyzeComponentStructure();
+        analyzeBuildPerformance();
+        runQualityChecks();
+      }
+    } catch (e) {
+      setError(e?.message || 'No se pudieron cargar las métricas de calidad.');
+      // Fallback
+      analyzeComponentStructure();
+      analyzeBuildPerformance();
+      runQualityChecks();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Llamada automática cuando el usuario es admin
+  useEffect(() => {
+    if (hasRole('admin')) {
+      // No metas hasRole en deps; usa el rol del perfil (estable)
+      loadArchitectureData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile?.role]);
+
+  // ----------------------------
+  // Render helpers
+  // ----------------------------
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'passed': case'healthy': case'optimized':
+      case 'passed': case 'healthy': case 'optimized':
         return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'warning':
         return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
-      case 'failed': case'error':
+      case 'failed': case 'error':
         return <XCircle className="w-4 h-4 text-red-500" />;
       default:
         return <RefreshCw className="w-4 h-4 text-gray-500 animate-spin" />;
@@ -177,11 +240,11 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'passed': case'healthy': case'optimized':
+      case 'passed': case 'healthy': case 'optimized':
         return 'text-green-600 bg-green-50 border-green-200';
       case 'warning':
         return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'failed': case'error':
+      case 'failed': case 'error':
         return 'text-red-600 bg-red-50 border-red-200';
       default:
         return 'text-gray-600 bg-gray-50 border-gray-200';
@@ -201,22 +264,20 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
       framework: 'React + Vite + TypeScript + Tailwind CSS',
       metrics: codeMetrics,
       architecture: componentArchitecture,
-      qualityChecks: qualityChecks,
+      qualityChecks,
       responsiveness: responsiveBreakpoints,
-      buildMetrics: buildMetrics
+      buildMetrics
     };
-
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: 'application/json'
-    });
-
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `novaasistencia-code-quality-report-${new Date()?.toISOString()?.split('T')?.[0]}.json`;
-    document.body?.appendChild(a);
-    a?.click();
-    document.body?.removeChild(a);
+    a.download = `novaasistencia-code-quality-report-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -253,13 +314,16 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
               <button
                 onClick={loadArchitectureData}
                 disabled={loading}
-                className="flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                aria-busy={loading}
+                aria-live="polite"
+                className="flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Analizar
               </button>
               <button
                 onClick={exportReport}
+                aria-label="Exportar reporte de calidad"
                 className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-md shadow-sm text-sm font-medium hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
                 <Download className="w-4 h-4 mr-2" />
@@ -269,6 +333,16 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-6">
           {/* Left Sidebar - Project Structure Tree */}
@@ -277,7 +351,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
               <Layers className="w-5 h-5 mr-2" />
               Project Structure
             </h2>
-            
+
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <RefreshCw className="w-6 h-6 animate-spin text-purple-600" />
@@ -287,7 +361,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                 <div>
                   <h3 className="font-medium text-gray-700 text-sm mb-2">📁 src/pages</h3>
                   <div className="ml-4 space-y-1 text-sm text-gray-600">
-                    <div>📄 {componentArchitecture?.pages} páginas totales</div>
+                    <div>📄 {componentArchitecture?.pages?.count ?? componentArchitecture?.pages} páginas totales</div>
                     <div className="ml-2 space-y-0.5 text-xs">
                       <div>• Dashboard Pages: 8</div>
                       <div>• Management Consoles: 12</div>
@@ -300,7 +374,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                 <div>
                   <h3 className="font-medium text-gray-700 text-sm mb-2">📁 src/components</h3>
                   <div className="ml-4 space-y-1 text-sm text-gray-600">
-                    <div>🧩 {componentArchitecture?.components} componentes</div>
+                    <div>🧩 {componentArchitecture?.components?.count ?? componentArchitecture?.components} componentes</div>
                     <div className="ml-2 space-y-0.5 text-xs">
                       <div>• UI Components: 45</div>
                       <div>• Form Components: 28</div>
@@ -313,7 +387,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                 <div>
                   <h3 className="font-medium text-gray-700 text-sm mb-2">📁 src/services</h3>
                   <div className="ml-4 space-y-1 text-sm text-gray-600">
-                    <div>⚙️ {componentArchitecture?.services} servicios</div>
+                    <div>⚙️ 12 servicios</div>
                     <div className="ml-2 space-y-0.5 text-xs">
                       <div>• authService.js</div>
                       <div>• employeeService.js</div>
@@ -414,7 +488,8 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                       onClick={() => setActivePanel(tab?.id)}
                       className={`${
                         activePanel === tab?.id
-                          ? 'border-purple-500 text-purple-600' :'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          ? 'border-purple-500 text-purple-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                       } whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm flex items-center`}
                     >
                       <tab.icon className="w-4 h-4 mr-2" />
@@ -448,7 +523,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                                   <li>✓ Optional Chaining</li>
                                 </ul>
                               </div>
-                              
+
                               <div className="bg-green-50 rounded-lg p-4">
                                 <h4 className="font-medium text-green-900 mb-2">Supabase Integration</h4>
                                 <ul className="text-sm text-green-700 space-y-1">
@@ -519,7 +594,9 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                           {responsiveBreakpoints?.map((breakpoint, index) => (
                             <div key={index} className="bg-gray-50 rounded-lg p-4">
                               <div className="flex items-center mb-2">
-                                {breakpoint?.device === 'Mobile' ? <Smartphone className="w-5 h-5 mr-2 text-blue-600" /> : <Monitor className="w-5 h-5 mr-2 text-blue-600" />}
+                                {breakpoint?.device === 'Mobile'
+                                  ? <Smartphone className="w-5 h-5 mr-2 text-blue-600" />
+                                  : <Monitor className="w-5 h-5 mr-2 text-blue-600" />}
                                 <h4 className="font-medium text-gray-900">{breakpoint?.device}</h4>
                               </div>
                               <p className="text-sm text-gray-600 mb-2">{breakpoint?.width}</p>
@@ -544,7 +621,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                               <p className="text-2xl font-bold text-blue-600">{buildMetrics?.buildTime}</p>
                               <p className="text-sm text-blue-700">Vite optimized</p>
                             </div>
-                            
+
                             <div className="bg-green-50 rounded-lg p-4">
                               <h4 className="font-medium text-green-900 mb-2">Bundle Size</h4>
                               <p className="text-2xl font-bold text-green-600">{buildMetrics?.bundleSize}</p>
@@ -600,7 +677,7 @@ export default function FrontendArchitectureAndCodeQualityDashboard() {
                               <p className="text-2xl font-bold text-gray-600">N/A</p>
                               <p className="text-sm text-gray-500">Not configured</p>
                             </div>
-                            
+
                             <div className="bg-gray-50 rounded-lg p-4">
                               <h4 className="font-medium text-gray-900 mb-2">Integration Tests</h4>
                               <p className="text-2xl font-bold text-gray-600">N/A</p>

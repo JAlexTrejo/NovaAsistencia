@@ -1,159 +1,141 @@
 // src/hooks/useQuery.js
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * Pequeño stringify estable para deps sin romper por orden de claves.
- * Útil cuando pasas objetos como params.
+ * useServiceQuery(serviceFn, options)
+ * - serviceFn: función async del service. Debe retornar:
+ *      a) { ok, data, error, code }  ó
+ *      b) data cruda (se trata como ok = true)
+ *
+ * options:
+ *  - params: valor o array de valores a pasar a serviceFn
+ *  - enabled: boolean (default: true)
+ *  - deps: array de dependencias extra para re-ejecutar
+ *  - select: (data) => any  (mapeo opcional del resultado)
+ *  - keepPreviousData: boolean (mantener datos previos durante fetch)
+ *  - retry: number (reintentos ante error de red/idempotentes) default 0
+ *  - onSuccess, onError: callbacks
  */
-function stableStringify(obj) {
-  try {
-    if (obj == null) return 'null';
-    if (typeof obj !== 'object') return String(obj);
-    const keys = Object.keys(obj).sort();
-    return `{${keys.map(k => `"${k}":${stableStringify(obj[k])}`).join(',')}}`;
-  } catch {
-    // fallback
-    return JSON.stringify(obj);
-  }
+
+function normalizeError(err) {
+  if (!err) return { error: 'Unknown error', code: 'UNKNOWN' };
+  if (typeof err === 'string') return { error: err };
+  if (err?.error || err?.code) return { error: err?.error || 'Error', code: err?.code };
+  return { error: err?.message || 'Unexpected error', code: err?.code };
 }
 
-/**
- * useQuery
- * Estándar para consumir servicios con contrato { ok, data } | { ok: false, error, code? }
- *
- * @param {Function} serviceFn   - función async del servicio (p.ej. employeeService.listEmployees)
- * @param {Object}   options
- *   - params         (any)      - parámetros a pasar al servicio
- *   - deps           (array)    - dependencias adicionales que deben disparar el fetch
- *   - enabled        (boolean)  - si false, no ejecuta automáticamente
- *   - immediate      (boolean)  - si true (default), ejecuta al montar (si enabled)
- *   - keepPreviousData (boolean)- si true, no limpia data durante refetch
- *   - select         (fn)       - mapea/transforma la data antes de setear
- *   - onSuccess      (fn)       - callback(data)
- *   - onError        (fn)       - callback(errorObj)
- *   - retry          (number)   - reintentos en errores transitorios (default 0)
- *   - retryDelay     (number)   - base ms para backoff exponencial (default 800)
- *
- * Retorna:
- * { data, error, isLoading, isFetching, isSuccess, isError, status, refetch }
- */
-export function useQuery(serviceFn, options = {}) {
+export function useServiceQuery(serviceFn, options = {}) {
   const {
     params,
-    deps = [],
     enabled = true,
-    immediate = true,
-    keepPreviousData = false,
+    deps = [],
     select,
+    keepPreviousData = false,
+    retry = 0,
     onSuccess,
     onError,
-    retry = 0,
-    retryDelay = 800,
   } = options;
 
-  const paramsKey = useMemo(() => stableStringify(params), [params]);
-  const extraDepsKey = useMemo(() => stableStringify(deps), [deps]);
-
   const mountedRef = useRef(true);
-  const runIdRef = useRef(0);
+  const abortRef = useRef(null);
 
-  const [data, setData]       = useState(null);
-  const [error, setError]     = useState(null);
-  const [status, setStatus]   = useState('idle');     // 'idle' | 'loading' | 'success' | 'error'
-  const [isFetching, setFetching] = useState(false);  // true durante refetch (con datos previos)
+  const [data, setData] = useState(undefined);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState(enabled ? 'loading' : 'idle'); // idle | loading | success | error
+  const [isFetching, setIsFetching] = useState(false);
 
-  const isLoading  = status === 'loading';
-  const isSuccess  = status === 'success';
-  const isError    = status === 'error';
+  const callService = useCallback(async () => {
+    if (!serviceFn || !enabled) return;
 
-  const exec = useCallback(async () => {
-    if (!enabled || typeof serviceFn !== 'function') return;
+    // Evita superposiciones
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
 
-    const runId = ++runIdRef.current;
+    if (status === 'idle') setStatus('loading');
+    else setIsFetching(true);
 
-    // Primera carga vs refetch con datos previos
-    if (!keepPreviousData || data == null) {
-      setStatus('loading');
-    } else {
-      setFetching(true);
-    }
-    setError(null);
-
-    const attempt = async (n = 0) => {
-      let res;
+    let attempts = 0;
+    while (attempts <= retry) {
       try {
-        // Soporta servicios con firma (params) o sin params
-        res = params !== undefined ? await serviceFn(params) : await serviceFn();
+        const args = Array.isArray(params) ? params : (params !== undefined ? [params] : []);
+        const res = await serviceFn(...args);
 
-        // Contrato esperado
-        if (!res || typeof res !== 'object') {
-          throw { message: 'Invalid service response', code: 'CLIENT' };
+        if (ac.signal.aborted) return;
+
+        // Soporta contrato { ok, data, error } o data cruda
+        let nextData, ok = true, errObj = null;
+        if (res && typeof res === 'object' && 'ok' in res) {
+          ok = !!res.ok;
+          if (ok) nextData = res.data;
+          else errObj = normalizeError(res);
+        } else {
+          nextData = res;
         }
-        if (res.ok !== true) {
-          const err = { message: res.error || 'Unknown error', code: res.code || 'UNKNOWN' };
-          throw err;
-        }
 
-        // select opcional
-        const nextData = typeof select === 'function' ? select(res.data) : res.data;
+        if (!ok) throw errObj || { error: 'Request failed' };
 
-        // Evitar race conditions si hubo un refetch más reciente
-        if (!mountedRef.current || runIdRef.current !== runId) return;
+        const finalData = typeof select === 'function' ? select(nextData) : nextData;
 
-        setData(nextData);
+        if (!mountedRef.current) return;
+        setError(null);
+        // Si keepPreviousData es true, NO limpiamos data al iniciar el fetch;
+        // simplemente actualizamos cuando llega la nueva respuesta:
+        setData(finalData);
         setStatus('success');
-        setFetching(false);
-        if (typeof onSuccess === 'function') onSuccess(nextData);
+        setIsFetching(false);
+        onSuccess && onSuccess(finalData);
+        return;
       } catch (e) {
-        if (!mountedRef.current || runIdRef.current !== runId) return;
-
-        // ¿Reintentar?
-        if (n < retry) {
-          const delay = retryDelay * Math.pow(2, n); // backoff exponencial
-          await new Promise(r => setTimeout(r, delay));
-          return attempt(n + 1);
+        if (ac.signal.aborted) return;
+        const norm = normalizeError(e);
+        if (attempts < retry) {
+          attempts += 1;
+          continue; // reintento
         }
-
-        const errObj = {
-          message: e?.message || 'Ocurrió un error. Intenta de nuevo.',
-          code: e?.code || 'UNKNOWN',
-          raw: e,
-        };
-        setError(errObj);
+        if (!mountedRef.current) return;
+        setError(norm);
         setStatus('error');
-        setFetching(false);
-        if (typeof onError === 'function') onError(errObj);
+        setIsFetching(false);
+        onError && onError(norm);
+        return;
       }
-    };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceFn, enabled, select, keepPreviousData, retry, JSON.stringify(params)]);
 
-    await attempt(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceFn, paramsKey, extraDepsKey, enabled, keepPreviousData, select, onSuccess, onError, retry, retryDelay]);
-
-  // Montaje / desmontaje
+  // Efecto principal
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  // Auto-ejecución
-  useEffect(() => {
-    if (enabled && immediate) exec();
-  }, [enabled, immediate, exec]);
+    if (enabled) callService();
+    return () => {
+      mountedRef.current = false;
+      if (abortRef.current) abortRef.current.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, callService, ...deps]);
 
   const refetch = useCallback(() => {
     if (!enabled) return;
-    return exec();
-  }, [enabled, exec]);
+    return callService();
+  }, [enabled, callService]);
 
   return {
     data,
     error,
-    isLoading,
-    isFetching,
-    isSuccess,
-    isError,
     status,
+    isLoading: status === 'loading',
+    isError: status === 'error',
+    isSuccess: status === 'success',
+    isFetching,
     refetch,
   };
 }
+
+/**
+ * Compatibilidad: muchas pantallas importan `{ useQuery }` desde este archivo.
+ * Exportamos un alias para no romper esos imports.
+ */
+export const useQuery = useServiceQuery;
+
+export default useServiceQuery;

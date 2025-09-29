@@ -66,7 +66,10 @@ export async function listEmployees(page = 0) {
 
     const { data, error, count } = await supabase
       .from('employee_profiles')
-      .select(`${EMP_BASE_COLS}, ${USER_NEST}, ${SITE_NEST}, ${SUPERVISOR_NEST}`, { count: 'exact' })
+      .select(
+        `${EMP_BASE_COLS}, ${USER_NEST}, ${SITE_NEST}, ${SUPERVISOR_NEST}`,
+        { count: 'planned' } // suficiente para UI y más barato
+      )
       .order('created_at', { ascending: false })
       .range(from, to);
 
@@ -97,7 +100,6 @@ export async function getEmployeeById(employeeId) {
 export async function updateEmployee(employeeId, updates = {}) {
   try {
     const patch = {};
-    // Campos mutables del esquema
     if ('full_name' in updates)          patch.full_name = updates.full_name;
     if ('phone' in updates)              patch.phone = updates.phone;
     if ('id_number' in updates)          patch.id_number = updates.id_number;
@@ -138,7 +140,7 @@ export async function getEmployeesBySite(siteId) {
       .from('employee_profiles')
       .select(`${EMP_BASE_COLS}, ${USER_NEST}, ${SUPERVISOR_NEST}`)
       .eq('site_id', siteId)
-      .neq('status', 'deleted') // compat con tu campo status
+      .neq('status', 'deleted')
       .order('full_name', { ascending: true });
 
     if (error) return fail(error);
@@ -148,9 +150,10 @@ export async function getEmployeesBySite(siteId) {
   }
 }
 
-/** Empleados por supervisor
- *  1) Intenta vía employee_assignments (RLS más segura)
- *  2) Si no hay filas, fallback a columna supervisor_id del perfil
+/**
+ * Empleados por supervisor:
+ * 1) Via employee_assignments (más seguro con RLS)
+ * 2) Fallback a columna supervisor_id si no hay asignaciones
  */
 export async function getEmployeesBySupervisor(supervisorId) {
   try {
@@ -176,7 +179,7 @@ export async function getEmployeesBySupervisor(supervisorId) {
 
     let employees = (data || []).map(r => r.employee).filter(Boolean);
 
-    // 2) fallback si no hay assignments
+    // 2) fallback
     if (!employees.length) {
       const res = await supabase
         .from('employee_profiles')
@@ -262,14 +265,14 @@ export async function getEmployeesWithFilters(filters = {}) {
     if (filters.hireDateTo)   query = query.lte('hire_date', filters.hireDateTo);
 
     // orden
-    const sortColumn   = filters.sortColumn || 'full_name';
-    const sortAsc      = (filters.sortDirection || 'asc').toLowerCase() === 'asc';
+    const sortColumn = filters.sortColumn || 'full_name';
+    const sortAsc = (filters.sortDirection || 'asc').toLowerCase() === 'asc';
     query = query.order(sortColumn, { ascending: sortAsc });
 
     let { data, error } = await query;
     if (error) return fail(error);
 
-    // búsqueda local (full_name / employee_id / id_number)
+    // búsqueda local
     if (filters.search && data?.length) {
       const needle = String(filters.search).trim().toLowerCase();
       data = data.filter(r =>
@@ -285,7 +288,36 @@ export async function getEmployeesWithFilters(filters = {}) {
   }
 }
 
-export default {
+/**
+ * Obtiene todos los empleados (sin paginación dura).
+ * Soporta búsqueda básica (full_name/email) y límite configurable.
+ */
+export async function getAllEmployees({ search = '', limit = 1000, offset = 0 } = {}) {
+  try {
+    let query = supabase
+      .from('employee_profiles')
+      .select(
+        `${EMP_BASE_COLS}, ${USER_NEST}, ${SITE_NEST}, ${SUPERVISOR_NEST}`,
+        { count: 'planned' } // evita el costo de exact
+      )
+      .neq('status', 'deleted')
+      .order('full_name', { ascending: true });
+
+    if (search) {
+      query = query.or(`full_name.ilike.%${search}%,user_profiles.email.ilike.%${search}%`);
+    }
+
+    const { data, error, count } = await query.range(offset, offset + limit - 1);
+    if (error) return fail(error);
+
+    return ok({ rows: data || [], count: count ?? (data?.length || 0) });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// --- Agregador para soportar ambos estilos de import ---
+const employeeService = {
   listEmployees,
   getEmployeeById,
   updateEmployee,
@@ -295,4 +327,8 @@ export default {
   restoreEmployee,
   deleteEmployee,
   getEmployeesWithFilters,
+  getAllEmployees,
 };
+
+export { employeeService };
+export default employeeService;

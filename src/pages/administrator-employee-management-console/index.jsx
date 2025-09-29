@@ -1,30 +1,25 @@
-// src/pages/administrator-employee-management-console/index.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-import RoleBasedSidebar from '@/components/ui/RoleBasedSidebar';
-import NavigationHeader from '@/components/ui/NavigationHeader';
-import UserContextHeader from '@/components/ui/UserContextHeader';
-import NotificationCenter from '@/components/ui/NotificationCenter';
-import Icon from '@/components/AppIcon';
-import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
-
+import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
+import NavigationHeader from '../../components/ui/NavigationHeader';
+import UserContextHeader from '../../components/ui/UserContextHeader';
+import NotificationCenter from '../../components/ui/NotificationCenter';
+import Icon from '../../components/AppIcon';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
 import EmployeeFilters from './components/EmployeeFilters';
 import EmployeeTable from './components/EmployeeTable';
 import EmployeeDetailPanel from './components/EmployeeDetailPanel';
 import BulkActionsToolbar from './components/BulkActionsToolbar';
 import EmployeeCreationModal from './components/EmployeeCreationModal';
-
-import { useAuth } from '@/contexts/AuthContext';
-import enhancedEmployeeService from '@/services/enhancedEmployeeService';
-import { useQuery } from '@/hooks/useQuery';
+import { useAuth } from '../../contexts/AuthContext';
+import enhancedEmployeeService from '../../services/enhancedEmployeeService';
 
 const AdministratorEmployeeManagementConsole = () => {
   const navigate = useNavigate();
   const { getCurrentUserContext, loading: authLoading } = useAuth();
-
-  // UI state
+  
+  // State management
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
@@ -32,8 +27,15 @@ const AdministratorEmployeeManagementConsole = () => {
   const [isEditingEmployee, setIsEditingEmployee] = useState(false);
   const [isCreationModalOpen, setIsCreationModalOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
-
-  // Filters + sort
+  
+  // Data state
+  const [employees, setEmployees] = useState([]);
+  const [filteredEmployees, setFilteredEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [stats, setStats] = useState(null);
+  
+  // Filter state
   const [filters, setFilters] = useState({
     search: '',
     site: 'all',
@@ -43,75 +45,138 @@ const AdministratorEmployeeManagementConsole = () => {
     hireDateFrom: '',
     hireDateTo: ''
   });
-
-  const [sortConfig, setSortConfig] = useState({ column: 'name', direction: 'asc' });
+  
+  const [sortConfig, setSortConfig] = useState({
+    column: 'name',
+    direction: 'asc'
+  });
+  
   const [savedFilters, setSavedFilters] = useState([]);
-  const [error, setError] = useState('');
 
   const currentUser = getCurrentUserContext();
 
-  // Mantén sincronizado el buscador global con el filtro "search"
+  // Load employees data
+  const loadEmployees = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const employeesData = await enhancedEmployeeService?.getEmployees();
+      setEmployees(employeesData);
+    } catch (err) {
+      console.error('Error loading employees:', err);
+      setError(err?.message || 'Failed to load employees');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load statistics
+  const loadStats = async () => {
+    try {
+      const statsData = await enhancedEmployeeService?.getEmployeeStats();
+      setStats(statsData);
+    } catch (err) {
+      console.error('Error loading stats:', err);
+    }
+  };
+
+  // Initial data load
+  useEffect(() => {
+    if (!authLoading && currentUser) {
+      loadEmployees();
+      loadStats();
+    }
+  }, [authLoading, currentUser]);
+
+  // Filter and sort employees
+  useEffect(() => {
+    let filtered = [...employees];
+
+    // Apply filters
+    if (filters?.search) {
+      const searchTerm = filters?.search?.toLowerCase();
+      filtered = filtered?.filter(employee =>
+        employee?.name?.toLowerCase()?.includes(searchTerm) ||
+        employee?.email?.toLowerCase()?.includes(searchTerm) ||
+        employee?.employeeId?.toLowerCase()?.includes(searchTerm) ||
+        employee?.phone?.toLowerCase()?.includes(searchTerm)
+      );
+    }
+
+    if (filters?.site !== 'all') {
+      filtered = filtered?.filter(employee => employee?.site === filters?.site);
+    }
+
+    if (filters?.supervisor !== 'all') {
+      filtered = filtered?.filter(employee => employee?.supervisor === filters?.supervisor);
+    }
+
+    if (filters?.status?.length > 0) {
+      filtered = filtered?.filter(employee => filters?.status?.includes(employee?.status));
+    }
+
+    if (filters?.position !== 'all') {
+      filtered = filtered?.filter(employee => employee?.position === filters?.position);
+    }
+
+    if (filters?.hireDateFrom) {
+      filtered = filtered?.filter(employee => 
+        new Date(employee?.hireDate) >= new Date(filters?.hireDateFrom)
+      );
+    }
+
+    if (filters?.hireDateTo) {
+      filtered = filtered?.filter(employee => 
+        new Date(employee?.hireDate) <= new Date(filters?.hireDateTo)
+      );
+    }
+
+    // Apply sorting
+    filtered?.sort((a, b) => {
+      const aValue = a?.[sortConfig?.column];
+      const bValue = b?.[sortConfig?.column];
+      
+      if (sortConfig?.direction === 'asc') {
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+      } else {
+        return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+      }
+    });
+
+    setFilteredEmployees(filtered);
+  }, [employees, filters, sortConfig]);
+
+  // Update global search in filters
   useEffect(() => {
     setFilters(prev => ({ ...prev, search: globalSearch }));
   }, [globalSearch]);
 
-  // Parametros memorizados para el servicio (evita recargas innecesarias)
-  const serviceParams = useMemo(() => ({ ...filters }), [filters]);
-
-  // --- Data: Employees (con filtros) ---
-  const {
-    data: employees = [],
-    isLoading: employeesLoading,
-    error: employeesError,
-    refetch: refetchEmployees,
-  } = useQuery(enhancedEmployeeService.getEmployees.bind(enhancedEmployeeService), serviceParams);
-
-  // --- Data: Stats ---
-  const {
-    data: stats,
-    isLoading: statsLoading,
-    error: statsError,
-    refetch: refetchStats,
-  } = useQuery(enhancedEmployeeService.getEmployeeStats.bind(enhancedEmployeeService));
-
-  // Ordenamiento + filtrado en memoria (extra al que ya hace el servicio con filtros)
-  const filteredEmployees = useMemo(() => {
-    const arr = [...(employees || [])];
-
-    // sort
-    arr.sort((a, b) => {
-      const aVal = a?.[sortConfig.column];
-      const bVal = b?.[sortConfig.column];
-      if (sortConfig.direction === 'asc') {
-        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      }
-      return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-    });
-
-    return arr;
-  }, [employees, sortConfig]);
-
-  // Handlers selección
+  // Event handlers
   const handleEmployeeSelect = (employeeId, selected) => {
-    setSelectedEmployees(prev =>
-      selected ? [...prev, employeeId] : prev.filter(id => id !== employeeId)
-    );
+    if (selected) {
+      setSelectedEmployees(prev => [...prev, employeeId]);
+    } else {
+      setSelectedEmployees(prev => prev?.filter(id => id !== employeeId));
+    }
   };
 
   const handleSelectAll = (selected) => {
-    setSelectedEmployees(selected ? filteredEmployees.map(e => e.id) : []);
+    if (selected) {
+      setSelectedEmployees(filteredEmployees?.map(emp => emp?.id));
+    } else {
+      setSelectedEmployees([]);
+    }
   };
 
-  // Abrir panel detalle (trae full por ID)
   const handleEmployeeClick = async (employee) => {
     try {
-      setError('');
-      const full = await enhancedEmployeeService.getEmployeeById(employee.id);
-      setSelectedEmployee(full);
+      // Fetch complete employee details
+      const fullEmployee = await enhancedEmployeeService?.getEmployeeById(employee?.id);
+      setSelectedEmployee(fullEmployee);
       setIsDetailPanelOpen(true);
       setIsEditingEmployee(false);
     } catch (err) {
-      console.error(err);
+      console.error('Error loading employee details:', err);
       setError('Failed to load employee details');
     }
   };
@@ -124,53 +189,63 @@ const AdministratorEmployeeManagementConsole = () => {
 
   const handleSaveEmployee = async (updatedEmployee) => {
     try {
-      setError('');
-      await enhancedEmployeeService.updateEmployee(updatedEmployee.id, updatedEmployee);
+      await enhancedEmployeeService?.updateEmployee(updatedEmployee?.id, updatedEmployee);
       setSelectedEmployee(updatedEmployee);
-      await Promise.all([refetchEmployees(), refetchStats()]);
+      // Reload employees list
+      await loadEmployees();
+      await loadStats();
     } catch (err) {
-      console.error(err);
+      console.error('Error updating employee:', err);
       setError('Failed to update employee');
     }
   };
 
   const handleCreateEmployee = async (newEmployeeData) => {
     try {
-      setError('');
-      await enhancedEmployeeService.createEmployee(newEmployeeData);
-      await Promise.all([refetchEmployees(), refetchStats()]);
+      await enhancedEmployeeService?.createEmployee(newEmployeeData);
+      // Reload employees list
+      await loadEmployees();
+      await loadStats();
       setIsCreationModalOpen(false);
     } catch (err) {
-      console.error(err);
+      console.error('Error creating employee:', err);
       setError('Failed to create employee');
     }
   };
 
   const handleBulkAction = async (action) => {
     try {
-      setError('');
-      if (!selectedEmployees.length) return;
-
-      if (action === 'delete') {
-        for (const id of selectedEmployees) {
-          await enhancedEmployeeService.deleteEmployee(id, currentUser?.id);
+      if (action === 'delete' && selectedEmployees?.length > 0) {
+        // Implement bulk delete
+        for (const employeeId of selectedEmployees) {
+          await enhancedEmployeeService?.deleteEmployee(employeeId, currentUser?.id);
         }
-      } else if (action === 'activate') {
-        await enhancedEmployeeService.bulkUpdateEmployees(selectedEmployees, { status: 'active' });
-      } else if (action === 'deactivate') {
-        await enhancedEmployeeService.bulkUpdateEmployees(selectedEmployees, { status: 'inactive' });
+        await loadEmployees();
+        await loadStats();
+        setSelectedEmployees([]);
+      } else if (action === 'activate' && selectedEmployees?.length > 0) {
+        await enhancedEmployeeService?.bulkUpdateEmployees(selectedEmployees, { status: 'active' });
+        await loadEmployees();
+        setSelectedEmployees([]);
+      } else if (action === 'deactivate' && selectedEmployees?.length > 0) {
+        await enhancedEmployeeService?.bulkUpdateEmployees(selectedEmployees, { status: 'inactive' });
+        await loadEmployees();
+        setSelectedEmployees([]);
       }
-
-      await Promise.all([refetchEmployees(), refetchStats()]);
-      setSelectedEmployees([]);
     } catch (err) {
-      console.error(err);
+      console.error('Error in bulk action:', err);
       setError(`Failed to ${action} employees`);
     }
   };
 
-  const handleSaveFilter = (filterData) => setSavedFilters(prev => [...prev, filterData]);
-  const handleLoadFilter = (savedFilter) => setFilters(savedFilter?.filters || {});
+  const handleSaveFilter = (filterData) => {
+    setSavedFilters(prev => [...prev, filterData]);
+  };
+
+  const handleLoadFilter = (savedFilter) => {
+    setFilters(savedFilter?.filters);
+  };
+
   const handleClearFilters = () => {
     setFilters({
       search: '',
@@ -185,23 +260,34 @@ const AdministratorEmployeeManagementConsole = () => {
   };
 
   const handleViewAttendance = (employee) => {
-    navigate('/attendance-history-and-analytics-dashboard', { state: { employeeId: employee?.id } });
+    navigate('/attendance-history-and-analytics-dashboard', { 
+      state: { employeeId: employee?.id } 
+    });
   };
+
   const handleViewPayroll = (employee) => {
-    navigate('/payroll-calculation-and-management-interface', { state: { employeeId: employee?.id } });
+    navigate('/payroll-calculation-and-management-interface', { 
+      state: { employeeId: employee?.id } 
+    });
   };
+
   const handleViewIncidents = (employee) => {
-    navigate('/incident-registration-and-management-system', { state: { employeeId: employee?.id } });
+    navigate('/incident-registration-and-management-system', { 
+      state: { employeeId: employee?.id } 
+    });
   };
 
   const handleExportData = () => {
-    const dataToExport = selectedEmployees.length
-      ? employees.filter(emp => selectedEmployees.includes(emp.id))
+    const dataToExport = selectedEmployees?.length > 0 
+      ? employees?.filter(emp => selectedEmployees?.includes(emp?.id))
       : filteredEmployees;
-
+    
+    // Create CSV content
     const csvContent = [
-      ['ID Empleado', 'Nombre', 'Email', 'Teléfono', 'Obra', 'Supervisor', 'Puesto', 'Estado', 'Salario Diario'].join(','),
-      ...dataToExport.map(emp => [
+      // Headers
+      ['ID Empleado', 'Nombre', 'Email', 'Teléfono', 'Obra', 'Supervisor', 'Puesto', 'Estado', 'Salario Diario']?.join(','),
+      // Data rows
+      ...dataToExport?.map(emp => [
         emp?.employeeId || '',
         `"${emp?.name || ''}"`,
         emp?.email || '',
@@ -211,23 +297,23 @@ const AdministratorEmployeeManagementConsole = () => {
         emp?.position || '',
         emp?.status || '',
         emp?.dailySalary || 0
-      ].join(',')),
-    ].join('\n');
+      ]?.join(','))
+    ]?.join('\n');
 
+    // Download file
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute('download', `empleados_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const url = URL.createObjectURL(blob);
+    link?.setAttribute('href', url);
+    link?.setAttribute('download', `empleados_${new Date()?.toISOString()?.split('T')?.[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body?.appendChild(link);
+    link?.click();
+    document.body?.removeChild(link);
   };
 
-  // Loading y error (auth o queries)
-  const loading = authLoading || employeesLoading || statsLoading;
-  const anyError = error || employeesError || statsError;
-
-  if (loading) {
+  // Show loading state
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center space-y-4">
@@ -238,14 +324,15 @@ const AdministratorEmployeeManagementConsole = () => {
     );
   }
 
-  if (anyError) {
+  // Show error state
+  if (error && !loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <Icon name="AlertCircle" size={48} className="text-red-500 mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-gray-900 mb-2">Error al cargar datos</h2>
-          <p className="text-gray-600 mb-4">{(error?.message || error) || 'Error de carga'}</p>
-          <Button onClick={() => { refetchEmployees(); refetchStats(); }} variant="outline">
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={loadEmployees} variant="outline">
             Reintentar
           </Button>
         </div>
@@ -256,7 +343,7 @@ const AdministratorEmployeeManagementConsole = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar */}
-      <RoleBasedSidebar
+      <RoleBasedSidebar 
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         userRole={currentUser?.role?.toLowerCase()}
@@ -276,6 +363,7 @@ const AdministratorEmployeeManagementConsole = () => {
                 iconName={sidebarCollapsed ? 'PanelLeftOpen' : 'PanelLeftClose'}
                 iconSize={20}
               />
+              
               <div>
                 <h1 className="text-2xl font-bold text-foreground">Consola de Empleados</h1>
                 <p className="text-muted-foreground">Gestión integral de empleados y estructura organizacional</p>
@@ -283,24 +371,29 @@ const AdministratorEmployeeManagementConsole = () => {
             </div>
 
             <div className="flex items-center space-x-4">
+              {/* Global Search */}
               <div className="hidden md:block w-80">
                 <Input
                   type="search"
                   placeholder="Buscar empleados..."
                   value={globalSearch}
-                  onChange={(e) => setGlobalSearch(e.target.value)}
+                  onChange={(e) => setGlobalSearch(e?.target?.value)}
                   className="w-full"
                 />
               </div>
+
               <NotificationCenter />
-              <UserContextHeader onLogout={() => navigate('/employee-login-portal')} />
+              <UserContextHeader 
+                onLogout={() => navigate('/employee-login-portal')}
+              />
             </div>
           </div>
         </header>
 
         {/* Content */}
         <main className="p-6">
-          <NavigationHeader
+          {/* Navigation Header */}
+          <NavigationHeader 
             title="Consola de Empleados"
             subtitle="Gestión integral de empleados y estructura organizacional"
             showBackButton={false}
@@ -321,7 +414,7 @@ const AdministratorEmployeeManagementConsole = () => {
                   </div>
                 </div>
               </div>
-
+              
               <div className="bg-card rounded-lg p-4 border border-border">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-green-100 rounded-lg">
@@ -333,7 +426,7 @@ const AdministratorEmployeeManagementConsole = () => {
                   </div>
                 </div>
               </div>
-
+              
               <div className="bg-card rounded-lg p-4 border border-border">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-gray-100 rounded-lg">
@@ -345,7 +438,7 @@ const AdministratorEmployeeManagementConsole = () => {
                   </div>
                 </div>
               </div>
-
+              
               <div className="bg-card rounded-lg p-4 border border-border">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-red-100 rounded-lg">
@@ -366,17 +459,27 @@ const AdministratorEmployeeManagementConsole = () => {
               <div className="flex items-center space-x-2 text-muted-foreground">
                 <Icon name="Users" size={20} />
                 <span className="text-sm">
-                  {filteredEmployees.length} empleado{filteredEmployees.length !== 1 ? 's' : ''}{' '}
-                  {filteredEmployees.length !== employees.length && ` de ${employees.length} total`}
+                  {filteredEmployees?.length} empleado{filteredEmployees?.length !== 1 ? 's' : ''} 
+                  {filteredEmployees?.length !== employees?.length && ` de ${employees?.length} total`}
                 </span>
               </div>
             </div>
 
             <div className="flex items-center space-x-2">
-              <Button variant="outline" onClick={handleExportData} iconName="Download" iconSize={16}>
+              <Button
+                variant="outline"
+                onClick={handleExportData}
+                iconName="Download"
+                iconSize={16}
+              >
                 Exportar
               </Button>
-              <Button onClick={() => setIsCreationModalOpen(true)} iconName="Plus" iconSize={16}>
+              
+              <Button
+                onClick={() => setIsCreationModalOpen(true)}
+                iconName="Plus"
+                iconSize={16}
+              >
                 Nuevo Empleado
               </Button>
             </div>
@@ -384,7 +487,7 @@ const AdministratorEmployeeManagementConsole = () => {
 
           {/* Bulk Actions */}
           <BulkActionsToolbar
-            selectedCount={selectedEmployees.length}
+            selectedCount={selectedEmployees?.length}
             onBulkAction={handleBulkAction}
             onClearSelection={() => setSelectedEmployees([])}
             userRole={currentUser?.role?.toLowerCase()}
@@ -416,24 +519,26 @@ const AdministratorEmployeeManagementConsole = () => {
                 sortConfig={sortConfig}
                 onDelete={async (employeeId) => {
                   try {
-                    await enhancedEmployeeService.deleteEmployee(employeeId, currentUser?.id);
-                    await Promise.all([refetchEmployees(), refetchStats()]);
+                    await enhancedEmployeeService?.deleteEmployee(employeeId, currentUser?.id);
+                    await loadEmployees();
+                    await loadStats();
                   } catch (err) {
-                    console.error(err);
+                    console.error('Error deleting employee:', err);
                     setError('Failed to delete employee');
                   }
                 }}
                 onRestore={async (employeeId) => {
                   try {
-                    await enhancedEmployeeService.updateEmployee(employeeId, { status: 'active' });
-                    await Promise.all([refetchEmployees(), refetchStats()]);
+                    await enhancedEmployeeService?.updateEmployee(employeeId, { status: 'active' });
+                    await loadEmployees();
+                    await loadStats();
                   } catch (err) {
-                    console.error(err);
+                    console.error('Error restoring employee:', err);
                     setError('Failed to restore employee');
                   }
                 }}
                 userRole={currentUser?.role?.toLowerCase()}
-                loading={employeesLoading}
+                loading={loading}
               />
             </div>
 
