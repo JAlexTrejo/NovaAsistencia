@@ -79,15 +79,14 @@ export default defineConfig(async ({ mode }) => {
     },
 
     server: {
-      port: 4028,
+      port: 5000,
       host: '0.0.0.0',
-      strictPort: false,   // si 4028 está ocupado, usa otro
+      strictPort: false,
       hmr: {
         protocol: 'ws',
-        clientPort: 4028,
         overlay: true,
       },
-      allowedHosts: ['.amazonaws.com'],
+      allowedHosts: true,
     },
 
     preview: {
