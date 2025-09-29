@@ -6,3 +6,18 @@ package-lock.json
 .vscode/
 .idea/
 vite.config.*s.*
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Environment
+.env.local
+.env.*.local
+
+# OS
+Thumbs.db
+
+# Testing
+coverage
