@@ -20,7 +20,7 @@ import ReportHistory from './components/ReportHistory';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@/hooks/useQuery';
-import reportingService from '../../services/reportingService';
+import reportingService from '@/services/reportingService';
 
 const TABS = [
   { id: 'builder', name: 'Constructor', icon: 'Settings', description: 'Crear y personalizar reportes' },

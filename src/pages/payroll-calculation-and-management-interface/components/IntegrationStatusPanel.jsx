@@ -5,75 +5,10 @@ import Button from '../../../components/ui/Button';
 const IntegrationStatusPanel = ({ 
   onRefreshStatus,
   onTestConnection,
-  onSyncData 
+  onSyncData,
+  integrations = []
 }) => {
-  const [integrations, setIntegrations] = useState([]);
   const [lastSync, setLastSync] = useState(new Date());
-
-  // Mock integration status data
-  const mockIntegrations = [
-    {
-      id: 'accounting_system',
-      name: 'Sistema Contable',
-      description: 'Integración con software de contabilidad principal',
-      status: 'connected',
-      lastSync: new Date(Date.now() - 15 * 60 * 1000), // 15 minutes ago
-      syncFrequency: 'Cada 30 minutos',
-      recordsSync: 1250,
-      errors: 0,
-      icon: 'Calculator'
-    },
-    {
-      id: 'bank_transfer',
-      name: 'Transferencias Bancarias',
-      description: 'Sistema de pagos y transferencias automáticas',
-      status: 'connected',
-      lastSync: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-      syncFrequency: 'Diario a las 18:00',
-      recordsSync: 85,
-      errors: 0,
-      icon: 'CreditCard'
-    },
-    {
-      id: 'hr_system',
-      name: 'Sistema de RRHH',
-      description: 'Integración con base de datos de empleados',
-      status: 'warning',
-      lastSync: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
-      syncFrequency: 'Cada 4 horas',
-      recordsSync: 320,
-      errors: 2,
-      icon: 'Users',
-      lastError: 'Timeout en conexión - reintentando automáticamente'
-    },
-    {
-      id: 'tax_system',
-      name: 'Sistema Tributario',
-      description: 'Reportes automáticos a entidades fiscales',
-      status: 'error',
-      lastSync: new Date(Date.now() - 24 * 60 * 60 * 1000), // 24 hours ago
-      syncFrequency: 'Semanal',
-      recordsSync: 0,
-      errors: 5,
-      icon: 'FileText',
-      lastError: 'Error de autenticación - requiere intervención manual'
-    },
-    {
-      id: 'time_tracking',
-      name: 'Control de Tiempo',
-      description: 'Sincronización con sistema de asistencia',
-      status: 'connected',
-      lastSync: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
-      syncFrequency: 'Tiempo real',
-      recordsSync: 2840,
-      errors: 0,
-      icon: 'Clock'
-    }
-  ];
-
-  useEffect(() => {
-    setIntegrations(mockIntegrations);
-  }, []);
 
   const statusConfig = {
     connected: {
@@ -185,7 +120,17 @@ const IntegrationStatusPanel = ({
       </div>
       {/* Integration List */}
       <div className="divide-y divide-border">
-        {integrations?.map((integration) => {
+        {integrations?.length === 0 ? (
+          <div className="p-12 text-center">
+            <Icon name="Link" size={48} className="mx-auto text-muted-foreground mb-4 opacity-50" />
+            <h4 className="text-lg font-semibold text-foreground mb-2">
+              No hay integraciones configuradas
+            </h4>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Las integraciones externas aparecerán aquí cuando se configuren. Por ahora, todos los datos se gestionan internamente en el sistema.
+            </p>
+          </div>
+        ) : integrations?.map((integration) => {
           const config = statusConfig?.[integration?.status];
           
           return (

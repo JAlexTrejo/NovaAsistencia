@@ -18,15 +18,6 @@ const EmployeePayrollGrid = ({
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [expandedRows, setExpandedRows] = useState([]);
 
-  // Mock payroll data for employees
-  const mockPayrollData = {
-    1: { workedDays: 22, overtimeHours: 8, grossPay: 6200, deductions: 620, netPay: 5580, status: 'calculated' },
-    2: { workedDays: 20, overtimeHours: 4, grossPay: 5100, deductions: 510, netPay: 4590, status: 'pending' },
-    3: { workedDays: 23, overtimeHours: 12, grossPay: 6950, deductions: 695, netPay: 6255, status: 'approved' },
-    4: { workedDays: 21, overtimeHours: 6, grossPay: 5775, deductions: 577, netPay: 5198, status: 'calculated' },
-    5: { workedDays: 19, overtimeHours: 2, grossPay: 4850, deductions: 485, netPay: 4365, status: 'pending' }
-  };
-
   const sites = [
     { value: 'all', label: 'Todos los Sitios' },
     { value: 'obra_central', label: 'Obra Central' },
@@ -61,8 +52,8 @@ const EmployeePayrollGrid = ({
       let bValue = b?.[sortField];
       
       if (sortField === 'netPay') {
-        aValue = mockPayrollData?.[a?.id]?.netPay || 0;
-        bValue = mockPayrollData?.[b?.id]?.netPay || 0;
+        aValue = payrollData?.[a?.id]?.netPay || 0;
+        bValue = payrollData?.[b?.id]?.netPay || 0;
       }
       
       if (typeof aValue === 'string') {
@@ -214,7 +205,7 @@ const EmployeePayrollGrid = ({
           </thead>
           <tbody className="bg-background divide-y divide-border">
             {filteredAndSortedEmployees?.map((employee) => {
-              const payroll = mockPayrollData?.[employee?.id] || {};
+              const payroll = payrollData?.[employee?.id] || {};
               const isExpanded = expandedRows?.includes(employee?.id);
               const isSelected = selectedEmployees?.includes(employee?.id);
               
@@ -327,7 +318,7 @@ const EmployeePayrollGrid = ({
           <div className="flex items-center space-x-4">
             <span>
               Total Nómina: ${filteredAndSortedEmployees?.reduce((sum, emp) => 
-                sum + (mockPayrollData?.[emp?.id]?.netPay || 0), 0
+                sum + (payrollData?.[emp?.id]?.netPay || 0), 0
               )?.toLocaleString()}
             </span>
           </div>

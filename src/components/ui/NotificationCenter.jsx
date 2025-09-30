@@ -10,48 +10,7 @@ const NotificationCenter = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Mock notifications for demo
-  const mockNotifications = [
-    {
-      id: 1,
-      type: 'approval',
-      title: 'Solicitud de Ausencia Pendiente',
-      message: 'María González ha solicitado ausencia para el 15 de enero',
-      timestamp: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
-      isRead: false,
-      priority: 'high'
-    },
-    {
-      id: 2,
-      type: 'alert',
-      title: 'Registro de Asistencia Tardío',
-      message: 'Carlos Ruiz registró entrada a las 8:45 AM',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-      isRead: false,
-      priority: 'medium'
-    },
-    {
-      id: 3,
-      type: 'info',
-      title: 'Reporte Semanal Generado',
-      message: 'El reporte de asistencia semanal está listo para revisión',
-      timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
-      isRead: true,
-      priority: 'low'
-    },
-    {
-      id: 4,
-      type: 'system',
-      title: 'Mantenimiento Programado',
-      message: 'El sistema estará en mantenimiento el domingo de 2:00 AM a 4:00 AM',
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      isRead: true,
-      priority: 'medium'
-    }
-  ];
-
-  const activeNotifications = notifications?.length > 0 ? notifications : mockNotifications;
-  const unreadCount = activeNotifications?.filter(n => !n?.isRead)?.length;
+  const unreadCount = notifications?.filter(n => !n?.isRead)?.length;
 
   const getNotificationIcon = (type) => {
     const iconMap = {
@@ -150,14 +109,14 @@ const NotificationCenter = ({
 
           {/* Notifications List */}
           <div className="max-h-96 overflow-y-auto">
-            {activeNotifications?.length === 0 ? (
+            {notifications?.length === 0 ? (
               <div className="p-8 text-center">
                 <Icon name="Bell" size={32} className="mx-auto text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">No hay notificaciones</p>
               </div>
             ) : (
               <div className="py-2">
-                {activeNotifications?.map((notification) => (
+                {notifications?.map((notification) => (
                   <button
                     key={notification?.id}
                     onClick={() => handleNotificationClick(notification)}
@@ -207,7 +166,7 @@ const NotificationCenter = ({
           </div>
 
           {/* Footer */}
-          {activeNotifications?.length > 0 && (
+          {notifications?.length > 0 && (
             <div className="p-3 border-t border-border">
               <button
                 onClick={() => setIsOpen(false)}

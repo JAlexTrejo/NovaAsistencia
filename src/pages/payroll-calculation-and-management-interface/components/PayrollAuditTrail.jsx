@@ -9,82 +9,6 @@ const PayrollAuditTrail = ({ auditLogs = [] }) => {
   const [filterAction, setFilterAction] = useState('all');
   const [filterUser, setFilterUser] = useState('all');
 
-  // Mock audit trail data
-  const mockAuditLogs = [
-    {
-      id: 1,
-      timestamp: new Date('2025-01-04T14:30:00'),
-      user: 'Ana Martínez',
-      action: 'manual_adjustment',
-      description: 'Agregó bono de rendimiento de $500 a Juan Pérez',
-      employeeId: 'EMP001',
-      employeeName: 'Juan Pérez',
-      details: {
-        type: 'bonus',
-        amount: 500,
-        category: 'performance',
-        justification: 'Excelente desempeño en proyecto urgente'
-      }
-    },
-    {
-      id: 2,
-      timestamp: new Date('2025-01-04T13:15:00'),
-      user: 'Carlos Rodríguez',
-      action: 'payroll_calculation',
-      description: 'Calculó nómina semanal para 25 empleados',
-      employeeId: 'BULK',
-      employeeName: 'Múltiples empleados',
-      details: {
-        employeeCount: 25,
-        totalAmount: 125000,
-        period: 'Semana 1, Enero 2025'
-      }
-    },
-    {
-      id: 3,
-      timestamp: new Date('2025-01-04T12:45:00'),
-      user: 'Ana Martínez',
-      action: 'deduction_added',
-      description: 'Agregó deducción por anticipo de $300 a María González',
-      employeeId: 'EMP002',
-      employeeName: 'María González',
-      details: {
-        type: 'deduction',
-        amount: 300,
-        category: 'advance',
-        justification: 'Anticipo solicitado por empleado'
-      }
-    },
-    {
-      id: 4,
-      timestamp: new Date('2025-01-04T11:20:00'),
-      user: 'Sistema',
-      action: 'overtime_calculation',
-      description: 'Calculó automáticamente 12 horas extra para Pedro Sánchez',
-      employeeId: 'EMP003',
-      employeeName: 'Pedro Sánchez',
-      details: {
-        overtimeHours: 12,
-        rate: 46.875,
-        totalAmount: 562.5
-      }
-    },
-    {
-      id: 5,
-      timestamp: new Date('2025-01-04T10:00:00'),
-      user: 'Carlos Rodríguez',
-      action: 'payroll_approval',
-      description: 'Aprobó nómina de Luis Fernández',
-      employeeId: 'EMP004',
-      employeeName: 'Luis Fernández',
-      details: {
-        grossPay: 5775,
-        netPay: 5198,
-        status: 'approved'
-      }
-    }
-  ];
-
   const actionTypes = [
     { value: 'all', label: 'Todas las Acciones' },
     { value: 'manual_adjustment', label: 'Ajuste Manual' },
@@ -119,9 +43,7 @@ const PayrollAuditTrail = ({ auditLogs = [] }) => {
     default: 'text-muted-foreground'
   };
 
-  const activeLogs = auditLogs?.length > 0 ? auditLogs : mockAuditLogs;
-
-  const filteredLogs = activeLogs?.filter(log => {
+  const filteredLogs = auditLogs?.filter(log => {
     const matchesSearch = log?.description?.toLowerCase()?.includes(searchTerm?.toLowerCase()) ||
                          log?.employeeName?.toLowerCase()?.includes(searchTerm?.toLowerCase()) ||
                          log?.user?.toLowerCase()?.includes(searchTerm?.toLowerCase());
@@ -293,7 +215,7 @@ const PayrollAuditTrail = ({ auditLogs = [] }) => {
       <div className="p-4 border-t border-border bg-muted/50">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Mostrando {filteredLogs?.length} de {activeLogs?.length} registros
+            Mostrando {filteredLogs?.length} registros
           </span>
           <span>
             Última actualización: {formatTimestamp(new Date())}
