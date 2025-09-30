@@ -1,0 +1,107 @@
+Perform a final, comprehensive pre-production review of this app and confirm it is production-ready. Produce a clear report with: (1) a readiness verdict ✅/❌, (2) a prioritized checklist of findings with Severity (Blocker / High / Medium / Low), (3) proposed code diffs or commands to fix, and (4) a short “Launch Go/No-Go” summary.
+
+Scope and standards to verify:
+
+A. Build, quality, and safety
+
+Build passes cleanly (production mode). No warnings that indicate misconfig (React/Vite).
+
+TypeScript or JS type checks enabled (tsc --noEmit if TS; otherwise vite build + eslint).
+
+ESLint/Prettier run clean. Enforce strict rules (no unused vars, no implicit any, no console in prod, no debugger).
+
+Dependencies: remove unused, pin versions, and run a vulnerability scan (npm audit, pnpm audit, or SCA).
+
+No mock or hardcoded data anywhere (components, services, tests, env, fixtures). Remove placeholder API keys, sample users, fake lists, “TODO”, “FIXME”.
+
+Error boundaries exist around critical routes; no unhandled promise rejections.
+
+Unit/integration smoke tests cover critical flows (auth, RBAC, payroll calc, forms, file upload, exports). Provide minimal test suggestions if missing.
+
+B. App logic & UX (Spanish UI)
+
+The entire user interface remains Spanish; no stray English labels.
+
+Critical flows function: login, role-based dashboard, employees CRUD, assignments (Obra/Oficina), attendance, incidents, payroll (normal/OT/bonos/deducciones/aguinaldo/finiquito), exports, and reporting.
+
+Prevent duplicate/“waterfall” fetches (React StrictMode double-mount, React Query refetch loops, multiple components requesting the same resource, Realtime subscriptions). Confirm sensible React Query settings (staleTime, cacheTime, enabled, retry).
+
+Accessibility: labels, keyboard nav, focus states, contrasts; forms validate gracefully with Spanish messages.
+
+C. Security & data
+
+RBAC enforced: SuperAdmin (José Alejandro Trejo Contreras), Admin (Brenda, Karen), User (others). Verify server-side & client-side guards; no privilege escalation via UI or API.
+
+Supabase: RLS policies correct and comprehensive for all tables touched by the app; no broad anon access; service key never exposed client-side.
+
+Secrets & .env: present only via env; provide .env.example with all required keys (no real secrets).
+
+CORS, CSP, security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy), and safe cookie settings.
+
+Input validation & output encoding; prevent injection (SQL, XSS), path traversal on uploads, and unsafe HTML.
+
+PII handling: logs do not leak personal data; redact where appropriate.
+
+D. Performance & reliability
+
+Vite production build optimized: code-splitting, tree-shaking; bundle size reported; heavy deps vetted.
+
+Static assets compressed (Gzip/Brotli), long-lived cache headers with hash-based filenames.
+
+Core Web Vitals risk review (TTFB, LCP, CLS, INP); identify obvious bottlenecks (blocking JS, huge images).
+
+Supabase queries/indexes: verify indexes exist for frequent filters/joins; no N+1 in hot paths.
+
+Realtime features don’t cause refetch storms or memory leaks.
+
+Timezone correctness: America/Monterrey fixed end-to-end (server, DB, UI).
+
+E. Domain features (Nova HR specifics)
+
+Payroll calculations: hourly rate, OT, bonuses, deductions, weekly payroll, aguinaldo, finiquito—spot-check formulas and edge cases (rounding, timezone, week boundaries).
+
+Employee relations: roles, puestos, sitio/obra, supervisor mapping consistent with DB schema; admins can reassign correctly.
+
+Exports/large reports: verify the planned Edge Function or background job for big exports is wired or documented.
+
+Remove any temporary “mock” policy, demo users, seed data from UI.
+
+Spanish copy for confirmations, errors, and tooltips.
+
+F. Deployment (Docker/Nginx/VPS)
+
+Dockerfile stages correct; production image minimal; no dev deps.
+
+docker-compose healthcheck works; Nginx serves production build; no directory listing; correct try_files.
+
+Reverse proxy/SSL guidance noted if not included.
+
+Nginx caching/compression enabled; static files served efficiently.
+
+nginx-site.conf reviewed for CSP/CORS and gzip/brotli.
+
+Process/app health endpoints return 200 (the /health check).
+
+Memory/CPU baseline OK; no obvious leaks.
+
+G. Integrations & automations
+
+If used: n8n, Zoko/WhatsApp, Google Sheets state control—no hardcoded test URLs/tokens; clear config gates by env.
+
+Analytics/monitoring ready (e.g., Sentry/logging); provide minimal setup snippet if missing.
+
+Backup/restore notes for DB; migrations reproducible.
+
+Deliverables to output:
+
+Readiness Verdict: ✅ Ready / ❌ Not Ready.
+
+Findings: table or list with Severity, File/Path, Problem, Why it matters, Fix (with exact diffs when feasible).
+
+Commands to reproduce issues and to fix (lint/test/build, audit, format).
+
+Artifacts: bundle size report path (e.g., build/stats.html), any generated reports.
+
+Launch Go/No-Go: concise summary plus the minimum set of fixes to reach Go.
+
+If everything is clean, explicitly state: “No mocks/hardcoded data detected, RLS enforced, RBAC correct, secrets safe, production build optimized,” and include the final Go recommendation.
