@@ -1,0 +1,201 @@
+{
+  "event_message": "POST | 404 | 34.118.198.235 | 9875a757ba1fa354 | https://xlubjxbzqbtxtsmkkkzo.supabase.co/rest/v1/rpc/soft_delete_employee | Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+  "id": "3da17aa3-6835-4d6e-a88b-c8a9a2bda4cd",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "FFY1ZP"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "Google LLC",
+              "asn": 396982,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [
+                    33554457
+                  ],
+                  "ja3Hash": "2ad69c7e4b326b78d705a573dab4cfee",
+                  "ja4": "t13d1516h2_8daaf6152771_d8a2da3f94cd",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.92084658145905,
+                      "cache_ratio_1h": 0.54423880577087,
+                      "h2h3_ratio_1h": 0.98608392477036,
+                      "heuristic_ratio_1h": 0.0065547060221434,
+                      "ips_quantile_1h": 0.99999815225601,
+                      "ips_rank_1h": 1,
+                      "paths_rank_1h": 1,
+                      "reqs_quantile_1h": 0.99999815225601,
+                      "reqs_rank_1h": 1,
+                      "uas_rank_1h": 2
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 1,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "The Dalles",
+              "clientAcceptEncoding": "gzip, deflate, br",
+              "clientTcpRtt": 12,
+              "clientTrustScore": 1,
+              "colo": "SEA",
+              "continent": "NA",
+              "country": "US",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/2",
+              "isEUCountry": null,
+              "latitude": "45.59456",
+              "longitude": "-121.17868",
+              "metroCode": null,
+              "postalCode": "97058",
+              "region": "Oregon",
+              "regionCode": "OR",
+              "requestPriority": "weight=220;exclusive=1",
+              "timezone": "America/Los_Angeles",
+              "tlsCipher": "AEAD-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "EYU6t/aLxZCrLD9Ij7nRqOz6QDw=",
+              "tlsClientExtensionsSha1": "q9pTlj/7xz07KGst06GQiDSjjGw=",
+              "tlsClientExtensionsSha1Le": "mtQGbKh9JWOIvWQyYhxZg1N7Lbo=",
+              "tlsClientHelloLength": "1733",
+              "tlsClientRandom": "rwwkH8cpgPUwG+fSEWz4M52+VFnrV0wqA/FhlNLX74Q=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "ecafca7ba45c83fcb693afff78cc31431a9ae2aac132d74049cfa7aa61fe65d4",
+                  "clientHandshake": "d1aeee551432197924715a679b6789045e6a018970caf7623b61f163c8f696e4",
+                  "serverFinished": "c69454c147906d609a40b7e9246da3e38d72e4eb7f72023d1b95087c6ad0b086",
+                  "serverHandshake": "01bbe2f6d4e6273255960fb5bc406b9f0a7041f1853772538517b48c778e5d3b"
+                }
+              ],
+              "tlsVersion": "TLSv1.3",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": "*/*",
+              "cf_cache_status": null,
+              "cf_connecting_ip": "34.118.198.235",
+              "cf_ipcountry": "US",
+              "cf_ray": "9875a757ba1fa354",
+              "content_length": "2",
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json",
+              "date": null,
+              "host": "xlubjxbzqbtxtsmkkkzo.supabase.co",
+              "prefer": null,
+              "range": null,
+              "referer": "http://127.0.0.1:5000/",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+              "x_client_info": "supabase-js-web/2.58.0",
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "34.118.198.235"
+            }
+          ],
+          "host": "xlubjxbzqbtxtsmkkkzo.supabase.co",
+          "method": "POST",
+          "path": "/rest/v1/rpc/soft_delete_employee",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2069910314,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "1nzkI0",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2069910314,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "anon",
+                          "session_id": null,
+                          "signature_prefix": "1nzkI0",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": null,
+          "url": "https://xlubjxbzqbtxtsmkkkzo.supabase.co/rest/v1/rpc/soft_delete_employee"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9875a757d072a354-SEA",
+              "content_length": null,
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json; charset=utf-8",
+              "date": "Tue, 30 Sep 2025 18:06:21 GMT",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "01999bcd-d2e1-787a-b650-b55f1bafb55e",
+              "transfer_encoding": "chunked",
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 77,
+          "status_code": 404
+        }
+      ]
+    }
+  ],
+  "timestamp": 1759255581409000
+}
