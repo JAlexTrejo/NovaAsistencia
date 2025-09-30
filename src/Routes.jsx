@@ -386,7 +386,12 @@ function AppRoutes() {
 
 export default function Routes() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <ErrorBoundary>
         <div className="flex flex-col min-h-screen">
           <ScrollToTop />

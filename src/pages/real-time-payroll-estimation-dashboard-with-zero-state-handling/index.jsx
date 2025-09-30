@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../../contexts/AuthContext';
 import RoleBasedSidebar from '../../components/ui/RoleBasedSidebar';
 import NavigationBreadcrumb from '../../components/ui/NavigationBreadcrumb';

@@ -1,4 +1,5 @@
 import React from 'react';
+import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './contexts/AuthContext';
 import { BrandingProvider } from './components/BrandingProvider';
 import Routes from './Routes';
@@ -10,13 +11,15 @@ const App = () => {
   useStartupHealthCheck();
 
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <BrandingProvider>
-          <Routes />
-        </BrandingProvider>
-      </AuthProvider>
-    </ErrorBoundary>
+    <HelmetProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <BrandingProvider>
+            <Routes />
+          </BrandingProvider>
+        </AuthProvider>
+      </ErrorBoundary>
+    </HelmetProvider>
   );
 };
 
