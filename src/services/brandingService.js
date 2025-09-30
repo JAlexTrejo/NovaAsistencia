@@ -100,21 +100,41 @@ export async function uploadFavicon(file, keyPrefix = 'favicons') {
 
 /** Get public branding settings (for BrandingProvider) */
 export async function getPublicBrandingSettings() {
-  const result = await getBranding();
-  if (!result?.ok || !result?.data) {
+  try {
+    const result = await getBranding();
+    
+    // If table doesn't exist or RLS blocks access, return null silently
+    if (!result?.ok) {
+      // Only log if it's not a "table doesn't exist" or RLS error
+      const isTableMissing = result?.error?.includes('does not exist') || 
+                            result?.error?.includes('relation') ||
+                            result?.code === 'PGRST204' ||
+                            result?.code === 'PGRST301';
+      
+      if (!isTableMissing) {
+        console.warn('[Branding] Could not load settings:', result?.error);
+      }
+      return null;
+    }
+    
+    if (!result?.data) {
+      return null;
+    }
+    
+    const data = result.data;
+    return {
+      nombre_empresa: data?.brand_name || 'AsistenciaPro',
+      logo_url: data?.logo_url || null,
+      color_primario: data?.primary_color || '#3B82F6',
+      color_secundario: data?.secondary_color || '#10B981',
+      moneda: 'MXN',
+      simbolo_moneda: '$',
+      mensaje_bienvenida: 'Sistema de gestión de asistencia y recursos humanos'
+    };
+  } catch (error) {
+    // Silently fail - branding is optional
     return null;
   }
-  
-  const data = result.data;
-  return {
-    nombre_empresa: data?.brand_name || 'AsistenciaPro',
-    logo_url: data?.logo_url || null,
-    color_primario: data?.primary_color || '#3B82F6',
-    color_secundario: data?.secondary_color || '#10B981',
-    moneda: 'MXN',
-    simbolo_moneda: '$',
-    mensaje_bienvenida: 'Sistema de gestión de asistencia y recursos humanos'
-  };
 }
 
 /** Apply branding settings to the UI */

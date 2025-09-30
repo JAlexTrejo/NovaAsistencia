@@ -11,6 +11,10 @@ export const useBranding = () => {
   return context;
 };
 
+// Cache flag to prevent repeated API calls
+let brandingLoaded = false;
+let cachedBranding = null;
+
 export const BrandingProvider = ({ children }) => {
   const [branding, setBranding] = useState({
     nombre_empresa: 'AsistenciaPro',
@@ -24,7 +28,15 @@ export const BrandingProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadBrandingSettings();
+    // Only load once per session
+    if (!brandingLoaded) {
+      loadBrandingSettings();
+    } else if (cachedBranding) {
+      setBranding(cachedBranding);
+      setLoading(false);
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   const loadBrandingSettings = async () => {
@@ -36,12 +48,19 @@ export const BrandingProvider = ({ children }) => {
           ...prevBranding,
           ...settings
         }));
+        cachedBranding = { ...settings };
+        brandingLoaded = true;
         
         // Apply branding to the UI
         brandingService?.applyBrandingSettings(settings);
+      } else {
+        // No settings found, mark as loaded to prevent retries
+        brandingLoaded = true;
       }
     } catch (error) {
       console.warn('Could not load branding settings:', error?.message);
+      // Mark as loaded even on error to prevent repeated failed attempts
+      brandingLoaded = true;
     } finally {
       setLoading(false);
     }
