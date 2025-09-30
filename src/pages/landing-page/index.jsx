@@ -194,7 +194,7 @@ export default function LandingPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 pb-16">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-12 text-center text-white shadow-2xl">
           <h2 className="text-4xl font-bold mb-4">
             ¿Listo para optimizar tu gestión de recursos humanos?
@@ -211,15 +211,6 @@ export default function LandingPage() {
           </button>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-400 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p className="text-sm">
-            © 2025 GY&ID Corporativo App. Sistema de gestión de recursos humanos para empresas constructoras.
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }

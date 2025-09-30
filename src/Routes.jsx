@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ScrollToTop from "./components/ScrollToTop";
+import Footer from "./components/Footer";
 import { useAuth } from "./contexts/AuthContext";
 
 // Page imports
@@ -383,8 +384,13 @@ export default function Routes() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <ScrollToTop />
-        <AppRoutes />
+        <div className="flex flex-col min-h-screen">
+          <ScrollToTop />
+          <div className="flex-grow">
+            <AppRoutes />
+          </div>
+          <Footer />
+        </div>
       </ErrorBoundary>
     </BrowserRouter>
   );
