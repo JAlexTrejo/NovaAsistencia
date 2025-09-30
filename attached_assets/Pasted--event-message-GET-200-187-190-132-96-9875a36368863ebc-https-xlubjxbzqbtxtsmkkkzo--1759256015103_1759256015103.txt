@@ -1,0 +1,199 @@
+{
+  "event_message": "GET | 200 | 187.190.132.96 | 9875a36368863ebc | https://xlubjxbzqbtxtsmkkkzo.supabase.co/rest/v1/branding_settings?select=id%2Cbrand_name%2Clogo_url%2Cfavicon_url%2Cprimary_color%2Csecondary_color%2Cupdated_by%2Cupdated_at&limit=1 | Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0",
+  "id": "78dd0d35-27d0-43e0-a17c-3fa417901620",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "KCM9W4"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "TOTAL PLAY TELECOMUNICACIONES SA DE CV",
+              "asn": 17072,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [],
+                  "ja3Hash": "8f89af9ea837223d3ceacdba717e1d6e",
+                  "ja4": "q13d0312h3_55b375c5d22e_5a06198afb93",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.93343991041183,
+                      "cache_ratio_1h": 0.32439091801643,
+                      "h2h3_ratio_1h": 1,
+                      "heuristic_ratio_1h": 0.0010481640929356,
+                      "ips_quantile_1h": 0.99998706579208,
+                      "ips_rank_1h": 7,
+                      "paths_rank_1h": 6,
+                      "reqs_quantile_1h": 0.99998706579208,
+                      "reqs_rank_1h": 7,
+                      "uas_rank_1h": 26
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 99,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "San Pedro Garza García",
+              "clientAcceptEncoding": "gzip, deflate, br",
+              "clientTcpRtt": null,
+              "clientTrustScore": 99,
+              "colo": "QRO",
+              "continent": "NA",
+              "country": "MX",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/3",
+              "isEUCountry": null,
+              "latitude": "25.66040",
+              "longitude": "-100.40651",
+              "metroCode": null,
+              "postalCode": "66210",
+              "region": "Nuevo León",
+              "regionCode": "NLE",
+              "requestPriority": null,
+              "timezone": "America/Monterrey",
+              "tlsCipher": "AEAD-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "3HTt3+R/6BL3zeALJDSq0pR1yOQ=",
+              "tlsClientExtensionsSha1": "pbG3U07sr6fX7hU7BFKwbV/wU6Q=",
+              "tlsClientExtensionsSha1Le": "m7L8h3ldQwCTcFZcVJEP+nY08YA=",
+              "tlsClientHelloLength": "2020",
+              "tlsClientRandom": "whq6qHtx5BQL52TlmH9oVHk0iF33Uii2nXlS3CphlDs=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "bda87a40f8aded93e9d858449fc7e95f74edbdc93a4dd4305ff8f152cd13603a",
+                  "clientHandshake": "7e8fe087e8fa75af6fa9766c730f56822dae74432001a6902da2f726df72a1c2",
+                  "serverFinished": "e20b79a6c011d61c1fac07ef7a0a3da07d3e76a148a633a6b762ecedc9c3a618",
+                  "serverHandshake": "087cf3d6f7f0882268cdd16f098bec4cb8bd411df51694f920c2ff72ee82d64e"
+                }
+              ],
+              "tlsVersion": "TLSv1.3",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": "application/json",
+              "cf_cache_status": null,
+              "cf_connecting_ip": "187.190.132.96",
+              "cf_ipcountry": "MX",
+              "cf_ray": "9875a36368863ebc",
+              "content_length": null,
+              "content_location": null,
+              "content_range": null,
+              "content_type": null,
+              "date": null,
+              "host": "xlubjxbzqbtxtsmkkkzo.supabase.co",
+              "prefer": null,
+              "range": null,
+              "referer": "https://de50cb44-e263-49a7-9a1c-8f3d58aaefd6-00-1b0cj3hcy7qqz.kirk.replit.dev/",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0",
+              "x_client_info": "supabase-js-web/2.58.0",
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "187.190.132.96"
+            }
+          ],
+          "host": "xlubjxbzqbtxtsmkkkzo.supabase.co",
+          "method": "GET",
+          "path": "/rest/v1/branding_settings",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2069910314,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "1nzkI0",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2069910314,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "anon",
+                          "session_id": null,
+                          "signature_prefix": "1nzkI0",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": "?select=id%2Cbrand_name%2Clogo_url%2Cfavicon_url%2Cprimary_color%2Csecondary_color%2Cupdated_by%2Cupdated_at&limit=1",
+          "url": "https://xlubjxbzqbtxtsmkkkzo.supabase.co/rest/v1/branding_settings?select=id%2Cbrand_name%2Clogo_url%2Cfavicon_url%2Cprimary_color%2Csecondary_color%2Cupdated_by%2Cupdated_at&limit=1"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9875a36387d73ebc-QRO",
+              "content_length": "2",
+              "content_location": "/branding_settings?limit=1&select=id%2Cbrand_name%2Clogo_url%2Cfavicon_url%2Cprimary_color%2Csecondary_color%2Cupdated_by%2Cupdated_at",
+              "content_range": "*/*",
+              "content_type": "application/json; charset=utf-8",
+              "date": "Tue, 30 Sep 2025 18:03:40 GMT",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "01999bcb-5a32-77a7-abe7-3fde8e216116",
+              "transfer_encoding": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 1035,
+          "status_code": 200
+        }
+      ]
+    }
+  ],
+  "timestamp": 1759255419442000
+}
