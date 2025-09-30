@@ -7,7 +7,7 @@ import NavigationHeader from '../../components/ui/NavigationHeader';
 import { supabase } from '../../lib/supabase';
 
 export default function UserProfileManagementAndAuthenticationCenter() {
-  const { user, userProfile, loading, authError, signOut, fetchUserProfile } = useAuth();
+  const { user, userProfile, loading, authError, signOut, fetchUserProfile, getConnectionStatus } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [profileForm, setProfileForm] = useState({
     full_name: '',
@@ -51,9 +51,9 @@ export default function UserProfileManagementAndAuthenticationCenter() {
     const newStatus = { database: 'checking', profile: 'checking', role: 'checking' };
 
     try {
-      // Test database connection - Use correct table name 'user_profiles'
-      const { data: dbTest, error: dbError } = await supabase?.from('user_profiles')?.select('count')?.limit(1);
-      if (dbError) {
+      // Test database connection using AuthContext (no extra queries)
+      const connStatus = await getConnectionStatus();
+      if (!connStatus?.success) {
         newStatus.database = 'error';
         newDiagnostics?.push({
           type: 'error',
@@ -70,29 +70,15 @@ export default function UserProfileManagementAndAuthenticationCenter() {
         });
       }
 
-      // Test auth.user.id validation
+      // Use existing userProfile from AuthContext (already loaded, no extra query)
       if (user?.id) {
-        const { data: profileData, error: profileError } = await supabase
-          ?.from('user_profiles')
-          ?.select('*')
-          ?.eq('id', user?.id)
-          ?.single();
-
-        if (profileError && profileError?.code === 'PGRST116') {
+        if (!userProfile) {
           newStatus.profile = 'error';
           newDiagnostics?.push({
             type: 'error',
             category: 'Perfil',
             message: 'Perfil de usuario no encontrado en la base de datos',
             solution: 'El perfil se creará automáticamente o redirigir a completar perfil'
-          });
-        } else if (profileError) {
-          newStatus.profile = 'error';
-          newDiagnostics?.push({
-            type: 'error',
-            category: 'Perfil',
-            message: `Error en consulta de perfil: ${profileError?.message}`,
-            solution: 'Verificar esquema de base de datos y políticas RLS'
           });
         } else {
           newStatus.profile = 'success';
@@ -102,21 +88,21 @@ export default function UserProfileManagementAndAuthenticationCenter() {
             message: 'Perfil de usuario cargado exitosamente'
           });
 
-          // Test role validation
+          // Test role validation using existing userProfile
           const validRoles = ['user', 'supervisor', 'admin', 'superadmin'];
-          if (validRoles?.includes(profileData?.role)) {
+          if (validRoles?.includes(userProfile?.role)) {
             newStatus.role = 'success';
             newDiagnostics?.push({
               type: 'success',
               category: 'Rol',
-              message: `Rol válido asignado: ${profileData?.role}`
+              message: `Rol válido asignado: ${userProfile?.role}`
             });
           } else {
             newStatus.role = 'warning';
             newDiagnostics?.push({
               type: 'warning',
               category: 'Rol',
-              message: `Rol inválido o faltante: ${profileData?.role || 'ninguno'}`,
+              message: `Rol inválido o faltante: ${userProfile?.role || 'ninguno'}`,
               solution: 'Actualizar rol de usuario a: user, supervisor, admin, o superadmin'
             });
           }
@@ -178,8 +164,8 @@ export default function UserProfileManagementAndAuthenticationCenter() {
         setSaveMessage(`Error: ${error?.message}`);
       } else {
         setSaveMessage('¡Perfil actualizado exitosamente!');
-        // Refresh user profile
-        await fetchUserProfile?.(user?.id);
+        // Refresh user profile (uses cache, won't make extra request if recent)
+        await fetchUserProfile?.(user?.id, { useCache: false });
       }
     } catch (error) {
       setSaveMessage(`Error: ${error?.message}`);

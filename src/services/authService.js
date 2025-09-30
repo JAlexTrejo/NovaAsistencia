@@ -100,11 +100,9 @@ export const authService = {
       const key = import.meta.env?.VITE_SUPABASE_ANON_KEY;
       if (!url || !key) return fail({ message: 'Missing env: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY', code: 'CONFIG' });
 
+      // Test auth connection only - no need to query user_profiles
       const { error: sErr } = await supabase.auth.getSession();
       if (sErr) return fail(sErr);
-
-      const { error: dbErr } = await supabase.from('user_profiles').select('id').limit(1);
-      if (dbErr) return fail(dbErr);
 
       return ok(true);
     } catch (e) {

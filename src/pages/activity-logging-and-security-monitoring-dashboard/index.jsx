@@ -238,8 +238,12 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
     // Carga inicial
     loadActivityLogs();
     loadStatistics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAdminAccess, page, pageSize, filters.dateRange, filters.module, filters.action]);
 
-    if (!realTimeEnabled) {
+  // Separate effect for RT subscription (doesn't depend on filters)
+  useEffect(() => {
+    if (!hasAdminAccess || !realTimeEnabled) {
       // Si estaba suscrito, limpiar
       if (realtimeRef.current) {
         supabase.removeChannel(realtimeRef.current);
@@ -247,6 +251,9 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
       }
       return;
     }
+
+    // Only subscribe if not already subscribed
+    if (realtimeRef.current) return;
 
     // Suscripción a inserts
     const sub = supabase
@@ -276,7 +283,7 @@ export default function ActivityLoggingAndSecurityMonitoringDashboard() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAdminAccess, realTimeEnabled, page, pageSize, filters.dateRange, filters.module, filters.action]);
+  }, [hasAdminAccess, realTimeEnabled]);
 
   // Re-cargar al cambiar filtros “sin tiempo real” y al cambiar búsqueda (debounced)
   useEffect(() => {
