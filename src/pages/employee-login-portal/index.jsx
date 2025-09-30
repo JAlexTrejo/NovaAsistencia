@@ -121,20 +121,54 @@ export default function EmployeeLoginPortal() {
     }
   };
 
-  const title = "Portal de Acceso · Nova HR";
+  const title = "Portal de Acceso · GY&ID Corporativo";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
       <Helmet>
         <title>{title}</title>
         <meta name="description" content="Accede para continuar a tu panel." />
+        <style>
+          {`
+            @keyframes blob {
+              0%, 100% { transform: translate(0px, 0px) scale(1); }
+              33% { transform: translate(30px, -50px) scale(1.1); }
+              66% { transform: translate(-20px, 20px) scale(0.9); }
+            }
+            .animate-blob { animation: blob 7s infinite; }
+            .animation-delay-2000 { animation-delay: 2s; }
+            .animation-delay-4000 { animation-delay: 4s; }
+          `}
+        </style>
       </Helmet>
 
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow p-6">
-        <h1 className="text-xl font-semibold text-foreground mb-1">Iniciar sesión</h1>
-        <p className="text-sm text-muted-foreground mb-6">
-          Serás redirigido a: <span className="font-medium">{next}</span>
-        </p>
+      {/* Decorative Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 -left-4 w-72 h-72 bg-blue-400 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
+        <div className="absolute top-0 -right-4 w-72 h-72 bg-indigo-400 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-purple-400 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
+      </div>
+
+      <div className="w-full max-w-md relative">
+        {/* Logo Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+              <span className="text-white font-bold text-2xl">GY</span>
+            </div>
+            <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              GY&ID Corporativo
+            </span>
+          </div>
+          <p className="text-gray-600">Sistema de Gestión de Recursos Humanos</p>
+        </div>
+
+        {/* Login Card */}
+        <div className="bg-white/80 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-8">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Iniciar sesión</h1>
+          <p className="text-sm text-gray-600 mb-6">
+            Serás redirigido a: <span className="font-semibold text-blue-600">{next}</span>
+          </p>
 
         {(authError || message) && (
           <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">
@@ -152,7 +186,7 @@ export default function EmployeeLoginPortal() {
           <button
             type="button"
             onClick={() => { setMode("password"); setMessage(""); setInfo(""); setAuthError?.(""); }}
-            className={`px-3 py-1 rounded-md border ${mode === "password" ? "bg-primary text-primary-foreground border-primary" : "border-input"}`}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${mode === "password" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
             disabled={submitting || loading}
           >
             Correo y contraseña
@@ -160,7 +194,7 @@ export default function EmployeeLoginPortal() {
           <button
             type="button"
             onClick={() => { setMode("otp"); setMessage(""); setInfo(""); setAuthError?.(""); }}
-            className={`px-3 py-1 rounded-md border ${mode === "otp" ? "bg-primary text-primary-foreground border-primary" : "border-input"}`}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${mode === "otp" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
             disabled={submitting || loading}
           >
             Código (OTP)
@@ -171,8 +205,8 @@ export default function EmployeeLoginPortal() {
         {mode === "password" && (
           <form onSubmit={handleEmailLogin} className="space-y-4">
             <div>
-              <label className="block text-sm mb-1" htmlFor="email">
-                Correo
+              <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="email">
+                Correo electrónico
               </label>
               <input
                 id="email"
@@ -180,7 +214,7 @@ export default function EmployeeLoginPortal() {
                 type="email"
                 required
                 autoComplete="email"
-                className="w-full rounded-lg border border-input bg-background px-3 py-2"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 value={form.email}
                 onChange={onChange}
                 disabled={submitting || loading}
@@ -188,7 +222,7 @@ export default function EmployeeLoginPortal() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1" htmlFor="password">
+              <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="password">
                 Contraseña
               </label>
               <input
@@ -197,7 +231,7 @@ export default function EmployeeLoginPortal() {
                 type="password"
                 required
                 autoComplete="current-password"
-                className="w-full rounded-lg border border-input bg-background px-3 py-2"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 value={form.password}
                 onChange={onChange}
                 disabled={submitting || loading}
@@ -207,7 +241,7 @@ export default function EmployeeLoginPortal() {
             <button
               type="submit"
               disabled={submitting || loading}
-              className="w-full rounded-lg bg-primary text-primary-foreground px-3 py-2 font-medium"
+              className="w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-3 font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? "Ingresando…" : "Ingresar"}
             </button>
@@ -302,6 +336,7 @@ export default function EmployeeLoginPortal() {
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
