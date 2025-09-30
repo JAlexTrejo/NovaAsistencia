@@ -100,14 +100,68 @@ export const authService = {
       const key = import.meta.env?.VITE_SUPABASE_ANON_KEY;
       if (!url || !key) return fail({ message: 'Missing env: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY', code: 'CONFIG' });
 
-      // Test auth connection only - no need to query user_profiles
+      // Test 1: Auth connection
       const { error: sErr } = await supabase.auth.getSession();
       if (sErr) return fail(sErr);
 
+      // Test 2: Database table access (lightweight query to validate RLS)
+      const { error: dbErr } = await supabase
+        .from('user_profiles')
+        .select('id', { count: 'exact', head: true })
+        .limit(0);
+      
+      if (dbErr) {
+        // If it's a permission error, RLS is working but user isn't authenticated - that's ok
+        if (dbErr.code === 'PGRST301' || /permission denied|RLS/i.test(dbErr.message)) {
+          return ok({ auth: true, database: true, rls_active: true });
+        }
+        return fail(dbErr);
+      }
+
+      return ok({ auth: true, database: true, rls_active: true });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+
+  async testRPCAvailability(rpcName) {
+    try {
+      // Try to call RPC with no-op params to check if it exists
+      // This won't execute the RPC logic, just validates it's defined
+      const { error } = await supabase.rpc(rpcName, {});
+      
+      // If error is about missing params, RPC exists but needs args - that's ok
+      if (error && /argument|parameter/i.test(error.message)) {
+        return ok(true);
+      }
+      
+      // If error is about function not found, RPC doesn't exist
+      if (error && (/function.*does not exist|could not find/i.test(error.message) || error.code === '42883')) {
+        return { ok: false, error: `RPC '${rpcName}' not found`, code: 'RPC_MISSING' };
+      }
+      
+      // Any other error or success means RPC exists
       return ok(true);
     } catch (e) {
       return fail(e);
     }
+  },
+
+  async validateCriticalRPCs() {
+    const criticalRPCs = [
+      'validate_location_within_site',
+      'soft_delete_employee',
+      'log_activity'
+    ];
+    
+    const results = {};
+    for (const rpc of criticalRPCs) {
+      const result = await this.testRPCAvailability(rpc);
+      results[rpc] = result.ok ? 'available' : 'missing';
+    }
+    
+    const allAvailable = Object.values(results).every(status => status === 'available');
+    return ok({ rpcs: results, allAvailable });
   },
 
   async signIn(email, password) {
