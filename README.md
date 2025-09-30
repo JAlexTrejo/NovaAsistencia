@@ -1,4 +1,4 @@
-# GY&ID CRM by Alejandro Trejo y Nova Axis
+# GY&ID CRM by Alejandro Trejo y Nova Axis Consulting
 
 GY&ID CRM es un sistema integral de gestión de recursos humanos y nómina, diseñado específicamente para empresas de construcción con múltiples sitios de trabajo. El sistema incluye control de asistencia, cálculos de nómina automatizados, gestión de empleados y reportes avanzados.
 
@@ -328,9 +328,23 @@ export default defineConfig({
 - Usar optional chaining para acceso a propiedades
 - Seguir patrones establecidos en el proyecto
 
-## 📝 Licencia
+## 📝 Licencia y Colaboración
 
-Este proyecto está licenciado bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para detalles.
+Este software es **propietario** de Alejandro Trejo y Nova Axis Consulting.  
+No está permitido su uso, copia, distribución o modificación sin autorización expresa por escrito.  
+
+### Colaboración
+El proyecto acepta contribuciones de colaboradores autorizados bajo los siguientes lineamientos:
+
+1. **Solicitud previa**: Cualquier persona interesada en contribuir debe enviar una solicitud formal de colaboración a [correo/contacto].
+2. **Acuerdo de Colaboración**: Las contribuciones serán aceptadas únicamente si el colaborador firma un acuerdo de cesión de derechos y confidencialidad.
+3. **Propiedad Intelectual**: Todo el código, documentación o material agregado pasa a ser propiedad del proyecto.
+4. **Restricciones**: Queda prohibida la utilización del código en proyectos derivados, comerciales o de terceros sin consentimiento por escrito.
+
+Para más detalles o solicitudes de colaboración, favor de contactar:  
+📧 jose.alejandrotrejoc@gmail.com
+🌐 [https://novaaxisconsulting.com](https://novaaxisconsulting.com)
+
 
 ## 🆘 Soporte
 
