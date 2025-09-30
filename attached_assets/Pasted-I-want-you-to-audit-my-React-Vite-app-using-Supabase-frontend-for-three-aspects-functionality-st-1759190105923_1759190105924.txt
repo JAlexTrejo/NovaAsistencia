@@ -1,0 +1,132 @@
+I want you to audit my React/Vite app using Supabase (frontend) for three aspects: functionality, stability, and resource usage. Prioritize detecting and fixing redundant requests to /rest/v1/user_profiles (or any critical table) caused by:
+
+Multiple components requesting the same data on mount
+
+AuthContext re-querying user_profiles when a child calls context utilities
+
+Duplicate effects (React StrictMode) and/or real-time (RT) subscriptions triggering refetches
+
+📦 Scope
+Project: Vite + React, supabase-js
+
+We have a cache/deduplication layer (src/lib/supaCache.js) and an AuthContext (src/contexts/AuthContext.jsx) with “in-flight” dedupe and localStorage cache
+
+Goal: Confirm that each session makes at most one cold request to user_profiles, and the rest come from cache or state
+
+Detect duplicate RT subscriptions and effects without cleanup
+
+🧪 What I Need You to Do
+1. Temporary Network Instrumentation
+Insert an interceptor that counts all fetch calls to Supabase REST (/rest/v1/*) and RPC (/rpc/*) routes.
+
+Simple implementation (add before render in main.jsx):
+
+js
+// src/lib/net-tap.js (create this file)
+export function wrapGlobalFetchForMetrics() {
+  if (window.__fetchWrapped) return;
+  window.__fetchWrapped = true;
+  const orig = window.fetch;
+  window.__netCounters = window.__netCounters || { total: 0, byPath: {} };
+  window.fetch = async (...args) => {
+    try {
+      const url = String(args[0]);
+      if (url.includes('/rest/v1/') || url.includes('/rpc/')) {
+        window.__netCounters.total++;
+        const key = url.split('/rest/v1/')[1]?.split('?')[0] || url.split('/rpc/')[1] || url;
+        window.__netCounters.byPath[key] = (window.__netCounters.byPath[key] || 0) + 1;
+        // Optional: console.debug('[NET]', key);
+      }
+      return await orig(...args);
+    } catch (e) { throw e; }
+  };
+}
+In src/main.jsx:
+
+js
+import { wrapGlobalFetchForMetrics } from './lib/net-tap';
+wrapGlobalFetchForMetrics();
+After login/dashboard flow completes, print:
+
+js
+console.table(window.__netCounters?.byPath || {});
+console.log('TOTAL_CALLS', window.__netCounters?.total);
+Goal: user_profiles ≤ 1–2 (1 cold + 0/1 via RT) when loading main dashboard
+
+🧭 Test Scenarios (Manual/Automated)
+A1: Load unauthenticated app → login → redirect to main dashboard
+
+A2: Navigate between modules that consume profile/supervisor (e.g., activity, attendance, construction)
+
+A3: Toggle real-time where applicable (e.g., ActivityLogging…), confirm ONE active subscription per channel
+
+A4: Simulate StrictMode on/off. In dev, React 18 mounts effects twice → verify no duplicate calls or subscriptions (cleanup OK)
+
+🧹 Static Review + Proposed Fixes
+Look for useEffect without dependency list or with unstable deps causing refetch
+
+Confirm in AuthContext.jsx:
+
+onAuthStateChange has debounce and doesn’t call fetchUserProfile unnecessarily
+
+fetchUserProfile uses inFlightRef and localStorage only if userId matches
+
+fetchUserProfile is NOT called from getCurrentUserContext() (only pure getters)
+
+Confirm single instance of AuthProvider and one Supabase client
+
+Validate RT subscriptions are cleaned up (removeChannel) in useEffect return
+
+Ensure supaCache.selectCached is used in hot paths (frequent lists like supervisors/sites/profile)
+
+Look for circular imports or scattered calls to supabase.auth.getSession()
+
+✅ Acceptance Criteria (Hard Limits)
+Login → Dashboard:
+
+user_profiles ≤ 2 requests across base navigation
+
+Each module reusing profile must NOT trigger extra request
+
+RT: max 1 subscription per channel/table
+
+StrictMode dev: no duplicate subscriptions or requests on mount/unmount (check counters)
+
+Memory: no listener leaks (use performance.memory if available, or count Supabase channel listeners before/after)
+
+⚙️ Optional: Quick Automated Test
+Add a script npm run probe that:
+
+Launches dev server
+
+Uses Playwright/Pupe/JSdom to:
+
+Navigate login → dashboard
+
+Switch 2–3 tabs
+
+Report window.__netCounters
+
+Fail test if byPath['user_profiles'] > 2 or TOTAL_CALLS > threshold (e.g., 25)
+
+🩹 If You Detect Excess, Propose Specific Patch
+Where to place selectCached(...) or memoization (useMemo / useCallback)
+
+Where to move calls from components to centralized service with cache
+
+Where to add RT cleanup or “already subscribed” guards
+
+If StrictMode duplicates, ensure ref guards to prevent double init of subs
+
+📦 Deliverables
+PR with:
+
+src/lib/net-tap.js + installation hook
+
+README report (table of counted endpoints, before/after)
+
+Fixes with brief justification per file
+
+Optional probe script and results
+
+Note: I don’t want to remove functionality—just deduplicate and cache correctly. If you need more context, open src/contexts/AuthContext.jsx and src/lib/supaCache.js and suggest minimal changes to meet the limits.
