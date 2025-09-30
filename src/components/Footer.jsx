@@ -17,7 +17,7 @@ export default function Footer() {
             className="transition-opacity hover:opacity-80"
           >
             <img
-              src="/attached_assets/image-342x105_1759251645605.png"
+              src="/assets/images/nova-axis-logo.png"
               alt="Nova Axis Consulting"
               className="h-12 w-auto"
             />
