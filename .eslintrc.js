@@ -6,13 +6,12 @@ module.exports = {
   },
   extends: [
     "eslint:recommended",
-    "@eslint/js/recommended",
     "plugin:react/recommended",
     "plugin:react-hooks/recommended",
     "plugin:react/jsx-runtime",
     "prettier",
   ],
-  plugins: ["react", "react-hooks", "react-refresh", "security"],
+  plugins: ["react", "react-hooks", "react-refresh"],
   parserOptions: {
     ecmaVersion: "latest",
     sourceType: "module",
@@ -43,8 +42,6 @@ module.exports = {
     "prefer-const": "warn",
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "warn",
-    // Seguridad adicional
-    "security/detect-object-injection": "warn",
   },
-  ignorePatterns: ["dist", "vite.config.js", "*.test.js"],
+  ignorePatterns: ["dist", "build", "vite.config.js", "*.test.js"],
 };

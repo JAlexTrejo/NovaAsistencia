@@ -1,5 +1,5 @@
 // src/Routes.jsx
-import React, { Suspense } from "react";
+import React, { Suspense, lazy } from "react";
 import {
   BrowserRouter,
   Routes as RouterRoutes,
@@ -12,47 +12,41 @@ import ScrollToTop from "./components/ScrollToTop";
 import Footer from "./components/Footer";
 import { useAuth } from "./contexts/AuthContext";
 
-// Page imports
+// Eager-load critical pages for better initial performance
 import NotFound from "./pages/NotFound";
 import LandingPage from "./pages/landing-page";
 import EmployeeLoginPortal from "./pages/employee-login-portal";
-import EmployeeAttendanceDashboard from "./pages/employee-attendance-dashboard";
-import AdministratorEmployeeManagementConsole from "./pages/administrator-employee-management-console";
-import AttendanceHistoryAndAnalyticsDashboard from "./pages/attendance-history-and-analytics-dashboard";
-import PayrollCalculationAndManagementInterface from "./pages/payroll-calculation-and-management-interface";
-import EnhancedEmployeePayrollManagementWithDetailedCalculations from "./pages/enhanced-employee-payroll-management-with-detailed-calculations";
-import ConstructionSiteAndSupervisorManagementHub from "./pages/construction-site-and-supervisor-management-hub";
-import IncidentRegistrationAndManagementSystem from "./pages/incident-registration-and-management-system";
-import ComprehensiveReportingAndExportCenter from "./pages/comprehensive-reporting-and-export-center";
-import SystemAdministrationAndConfigurationPanel from "./pages/system-administration-and-configuration-panel";
-import UserProfileManagementAndAuthenticationCenter from "./pages/user-profile-management-and-authentication-center";
-import RoleBasedAccessControlManagementSystem from "./pages/role-based-access-control-management-system";
-import ActivityLoggingAndSecurityMonitoringDashboard from "./pages/activity-logging-and-security-monitoring-dashboard";
-import EnhancedEmployeeManagementConsoleWithDeletionControls from "./pages/enhanced-employee-management-console-with-deletion-controls";
-import RealTimePayrollEstimationDashboardWithZeroStateHandling from "./pages/real-time-payroll-estimation-dashboard-with-zero-state-handling";
-import AdvancedPayrollCalculationEngineWithComprehensiveWageManagement from "./pages/advanced-payroll-calculation-engine-with-comprehensive-wage-management";
-import RoleBasedPermissionEnforcementAndSecurityManagementSystem from "./pages/role-based-permission-enforcement-and-security-management-system";
-import PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration from "./pages/personalized-worker-dashboard-with-site-integration-and-team-collaboration";
-import ProductionDeploymentAndInfrastructureManagement from "./pages/production-deployment-and-infrastructure-management";
-import ProductionDatabaseSchemaManagementConsole from "./pages/production-database-schema-management-console";
-import FrontendArchitectureAndCodeQualityDashboard from "./pages/frontend-architecture-and-code-quality-dashboard";
-import ObrasFinancialControlManagement from "./pages/obras-financial-control-management";
-
-// New page imports
-import ProductionAuthenticationManagementSystem from "./pages/production-authentication-management-system";
-import ComprehensiveEmployeeRegistrationAndProfileManagement from "./pages/comprehensive-employee-registration-and-profile-management";
-import ProductionEnvironmentConfigurationDashboard from "./pages/production-environment-configuration-dashboard";
-import EnterpriseCodeQualityAndTestingCenter from "./pages/enterprise-code-quality-and-testing-center";
-
-// Production Hardening Pages
-import ProductionDataServicesAndErrorHandlingManagementConsole from "./pages/production-data-services-and-error-handling-management-console";
-import EnterpriseSecurityAndRbacImplementationCenter from "./pages/enterprise-security-and-rbac-implementation-center";
-
-// NEW IMPORT - Performance Optimization and Production Deployment Center
-import PerformanceOptimizationAndProductionDeploymentCenter from "./pages/performance-optimization-and-production-deployment-center";
-
-// Password reset page — RUTA EXACTA A TU ARCHIVO
 import AuthReset from "./auth/Reset.jsx";
+
+// Lazy-load all other pages to reduce initial bundle size
+const EmployeeAttendanceDashboard = lazy(() => import("./pages/employee-attendance-dashboard"));
+const AdministratorEmployeeManagementConsole = lazy(() => import("./pages/administrator-employee-management-console"));
+const AttendanceHistoryAndAnalyticsDashboard = lazy(() => import("./pages/attendance-history-and-analytics-dashboard"));
+const PayrollCalculationAndManagementInterface = lazy(() => import("./pages/payroll-calculation-and-management-interface"));
+const EnhancedEmployeePayrollManagementWithDetailedCalculations = lazy(() => import("./pages/enhanced-employee-payroll-management-with-detailed-calculations"));
+const ConstructionSiteAndSupervisorManagementHub = lazy(() => import("./pages/construction-site-and-supervisor-management-hub"));
+const IncidentRegistrationAndManagementSystem = lazy(() => import("./pages/incident-registration-and-management-system"));
+const ComprehensiveReportingAndExportCenter = lazy(() => import("./pages/comprehensive-reporting-and-export-center"));
+const SystemAdministrationAndConfigurationPanel = lazy(() => import("./pages/system-administration-and-configuration-panel"));
+const UserProfileManagementAndAuthenticationCenter = lazy(() => import("./pages/user-profile-management-and-authentication-center"));
+const RoleBasedAccessControlManagementSystem = lazy(() => import("./pages/role-based-access-control-management-system"));
+const ActivityLoggingAndSecurityMonitoringDashboard = lazy(() => import("./pages/activity-logging-and-security-monitoring-dashboard"));
+const EnhancedEmployeeManagementConsoleWithDeletionControls = lazy(() => import("./pages/enhanced-employee-management-console-with-deletion-controls"));
+const RealTimePayrollEstimationDashboardWithZeroStateHandling = lazy(() => import("./pages/real-time-payroll-estimation-dashboard-with-zero-state-handling"));
+const AdvancedPayrollCalculationEngineWithComprehensiveWageManagement = lazy(() => import("./pages/advanced-payroll-calculation-engine-with-comprehensive-wage-management"));
+const RoleBasedPermissionEnforcementAndSecurityManagementSystem = lazy(() => import("./pages/role-based-permission-enforcement-and-security-management-system"));
+const PersonalizedWorkerDashboardWithSiteIntegrationAndTeamCollaboration = lazy(() => import("./pages/personalized-worker-dashboard-with-site-integration-and-team-collaboration"));
+const ProductionDeploymentAndInfrastructureManagement = lazy(() => import("./pages/production-deployment-and-infrastructure-management"));
+const ProductionDatabaseSchemaManagementConsole = lazy(() => import("./pages/production-database-schema-management-console"));
+const FrontendArchitectureAndCodeQualityDashboard = lazy(() => import("./pages/frontend-architecture-and-code-quality-dashboard"));
+const ObrasFinancialControlManagement = lazy(() => import("./pages/obras-financial-control-management"));
+const ProductionAuthenticationManagementSystem = lazy(() => import("./pages/production-authentication-management-system"));
+const ComprehensiveEmployeeRegistrationAndProfileManagement = lazy(() => import("./pages/comprehensive-employee-registration-and-profile-management"));
+const ProductionEnvironmentConfigurationDashboard = lazy(() => import("./pages/production-environment-configuration-dashboard"));
+const EnterpriseCodeQualityAndTestingCenter = lazy(() => import("./pages/enterprise-code-quality-and-testing-center"));
+const ProductionDataServicesAndErrorHandlingManagementConsole = lazy(() => import("./pages/production-data-services-and-error-handling-management-console"));
+const EnterpriseSecurityAndRbacImplementationCenter = lazy(() => import("./pages/enterprise-security-and-rbac-implementation-center"));
+const PerformanceOptimizationAndProductionDeploymentCenter = lazy(() => import("./pages/performance-optimization-and-production-deployment-center"));
 
 // --- ProtectedRoute con soporte de `next` ---
 function ProtectedRoute({ children, requiredRole = null }) {
@@ -104,10 +98,20 @@ function ProtectedRoute({ children, requiredRole = null }) {
   return children;
 }
 
+// Loading fallback component with better UX
+const LoadingFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="flex flex-col items-center space-y-4">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      <span className="text-muted-foreground">Cargando página...</span>
+    </div>
+  </div>
+);
+
 // Main routing component
 function AppRoutes() {
   return (
-    <Suspense fallback={<div className="p-6">Cargando…</div>}>
+    <Suspense fallback={<LoadingFallback />}>
       <RouterRoutes>
         {/* Public Routes */}
         <Route path="/login" element={<EmployeeLoginPortal />} />
