@@ -4,6 +4,15 @@
 Nova HR is a comprehensive human resources and payroll management system designed for construction companies with multiple work sites. Built with React 18, Vite, and Supabase, it provides attendance control, automated payroll calculations, employee management, and advanced reporting.
 
 ## Recent Changes
+- **September 30, 2025**: Created professional landing page and enhanced login UI/UX
+  - Built new landing page at `/` with GY&ID Corporativo branding
+  - Features hero section, feature grid, benefits showcase, and call-to-action
+  - Login button in navigation bar redirects to `/login`
+  - Enhanced login page with gradient background and modern design
+  - Added animated decorative elements (blob animations)
+  - Professional form styling with improved visual hierarchy
+  - All existing login functionality preserved (email/password, OTP, password reset)
+
 - **September 29, 2025**: Replit environment setup and comprehensive testing
   - Configured Vite to run on port 5000 for Replit compatibility
   - Enabled `allowedHosts: true` for proxy support (Replit serves via iframe)
