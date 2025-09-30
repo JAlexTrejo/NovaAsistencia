@@ -13,6 +13,7 @@ import { useAuth } from "./contexts/AuthContext";
 
 // Page imports
 import NotFound from "./pages/NotFound";
+import LandingPage from "./pages/landing-page";
 import EmployeeLoginPortal from "./pages/employee-login-portal";
 import EmployeeAttendanceDashboard from "./pages/employee-attendance-dashboard";
 import AdministratorEmployeeManagementConsole from "./pages/administrator-employee-management-console";
@@ -368,8 +369,8 @@ function AppRoutes() {
           }
         />
 
-        {/* Default Redirects */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        {/* Landing Page */}
+        <Route path="/" element={<LandingPage />} />
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
